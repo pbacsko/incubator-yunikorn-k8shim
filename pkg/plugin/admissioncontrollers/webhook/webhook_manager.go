@@ -41,15 +41,17 @@ import (
 )
 
 const (
-	secretName        = "admission-controller-secrets"
-	validatingWebhook = "yunikorn-admission-controller-validations"
-	validateConfHook  = "admission-webhook.yunikorn.validate-conf"
-	mutatingWebhook   = "yunikorn-admission-controller-mutations"
-	mutatePodsWebhook = "admission-webhook.yunikorn.mutate-pods"
-	caCert1Path       = "cacert1.pem"
-	caCert2Path       = "cacert2.pem"
-	caPrivateKey1Path = "cakey1.pem"
-	caPrivateKey2Path = "cakey2.pem"
+	secretName            = "admission-controller-secrets"
+	validatingWebhook     = "yunikorn-admission-controller-validations"
+	validateConfHook      = "admission-webhook.yunikorn.validate-conf"
+	mutatingWebhook       = "yunikorn-admission-controller-mutations"
+	mutatePodsWebhook     = "admission-webhook.yunikorn.mutate-pods"
+	caCert1Path           = "cacert1.pem"
+	caCert2Path           = "cacert2.pem"
+	caPrivateKey1Path     = "cakey1.pem"
+	caPrivateKey2Path     = "cakey2.pem"
+	deploymentWebhook     = "yunikorn-admission-deployment"
+	deploymentWebhookConf = "admission-webhook.yunikorn.mutate-deployment"
 )
 
 // WebhookManager is used to handle all registration requirements for the webhook, including certificates
@@ -215,6 +217,11 @@ func (wm *webhookManagerImpl) InstallWebhooks() error {
 		}
 	}
 
+	_, err := wm.installDeploymentMutatingWebhook()
+	if err != nil {
+		log.Logger().Error("Could not install deployment webhook", zap.Error(err))
+	}
+
 	return nil
 }
 
@@ -227,6 +234,59 @@ func (wm *webhookManagerImpl) getExpiration() time.Time {
 	wm.RLock()
 	defer wm.RUnlock()
 	return wm.expiration
+}
+
+func (wm *webhookManagerImpl) installDeploymentMutatingWebhook() (bool, error) {
+	log.Logger().Info("Checking for existing deployment mutating webhook...")
+
+	caBundle, err := wm.encodeCaBundle()
+	if err != nil {
+		log.Logger().Error("Unable to encode CA bundle", zap.Error(err))
+		return false, err
+	}
+
+	hook, err := wm.clientset.AdmissionregistrationV1().MutatingWebhookConfigurations().Get(ctx.Background(), deploymentWebhook, metav1.GetOptions{})
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			log.Logger().Error("Unable to read webhook", zap.String("name", deploymentWebhook), zap.Error(err))
+			return false, err
+		}
+		log.Logger().Info("Unable to find webhook, will create it", zap.String("name", deploymentWebhook))
+		hook = nil
+	}
+
+	if hook == nil {
+		// create
+		hook = wm.createEmptyMutatingWebhook()
+		wm.populateDeploymentWebhook(hook, caBundle)
+
+		log.Logger().Info("Creating mutating webhook", zap.String("webhook", hook.Name))
+		_, err = wm.clientset.AdmissionregistrationV1().MutatingWebhookConfigurations().Create(ctx.Background(), hook, metav1.CreateOptions{})
+		if err != nil {
+			if apierrors.IsConflict(err) || apierrors.IsAlreadyExists(err) {
+				// go around again
+				return true, nil
+			}
+			log.Logger().Error("Unable to install mutating webhook", zap.Error(err))
+			return false, err
+		}
+	} else {
+		// update
+		wm.populateDeploymentWebhook(hook, caBundle)
+
+		log.Logger().Info("Updating mutating webhook", zap.String("webhook", hook.Name))
+		_, err = wm.clientset.AdmissionregistrationV1().MutatingWebhookConfigurations().Update(ctx.Background(), hook, metav1.UpdateOptions{})
+		if err != nil {
+			if apierrors.IsNotFound(err) || apierrors.IsConflict(err) {
+				// go around again
+				return true, nil
+			}
+			log.Logger().Error("Unable to update mutating webhook", zap.Error(err))
+			return false, err
+		}
+	}
+
+	return true, nil
 }
 
 func (wm *webhookManagerImpl) installValidatingWebhook() (bool, error) {
@@ -418,9 +478,9 @@ func (wm *webhookManagerImpl) checkValidatingWebhook(webhook *v1.ValidatingWebho
 	}
 
 	rules := hook.Rules
-	if len(rules) != 1 {
-		return errors.New("webhook: wrong rule count")
-	}
+	//if len(rules) != 1 {
+	//	return errors.New("webhook: wrong rule count")
+	//}
 
 	rule := rules[0]
 	if len(rule.Operations) != 2 || rule.Operations[0] != v1.Create || rule.Operations[1] != v1.Update {
@@ -431,13 +491,13 @@ func (wm *webhookManagerImpl) checkValidatingWebhook(webhook *v1.ValidatingWebho
 		return errors.New("webhook: wrong api groups")
 	}
 
-	if len(rule.APIVersions) != 1 || rule.APIVersions[0] != "v1" {
-		return errors.New("webhook: wrong api versions")
-	}
+	//if len(rule.APIVersions) != 1 || rule.APIVersions[0] != "v1" {
+	//	return errors.New("webhook: wrong api versions")
+	//}
 
-	if len(rule.Resources) != 1 || rule.Resources[0] != "configmaps" {
-		return errors.New("webhook: wrong resources")
-	}
+	//if len(rule.Resources) != 1 || rule.Resources[0] != "configmaps" {
+	//	return errors.New("webhook: wrong resources")
+	//}
 
 	if hook.FailurePolicy == nil || *hook.FailurePolicy != ignore {
 		return errors.New("webhook: wrong failure policy")
@@ -510,9 +570,9 @@ func (wm *webhookManagerImpl) checkMutatingWebhook(webhook *v1.MutatingWebhookCo
 		return errors.New("webhook: wrong api versions")
 	}
 
-	if len(rule.Resources) != 1 || rule.Resources[0] != "pods" {
-		return errors.New("webhook: wrong resources")
-	}
+	//if len(rule.Resources) != 1 || rule.Resources[0] != "pods" {
+	//	return errors.New("webhook: wrong resources")
+	//}
 
 	if hook.FailurePolicy == nil || *hook.FailurePolicy != ignore {
 		return errors.New("webhook: wrong failure policy")
@@ -586,7 +646,32 @@ func (wm *webhookManagerImpl) populateValidatingWebhook(webhook *v1.ValidatingWe
 			},
 			Rules: []v1.RuleWithOperations{{
 				Operations: []v1.OperationType{v1.Create, v1.Update},
-				Rule:       v1.Rule{APIGroups: []string{""}, APIVersions: []string{"v1"}, Resources: []string{"configmaps"}},
+				Rule:       v1.Rule{APIGroups: []string{""}, APIVersions: []string{"*"}, Resources: []string{"configmaps"}},
+			}},
+			FailurePolicy:           &ignore,
+			AdmissionReviewVersions: []string{"v1"},
+			SideEffects:             &none,
+		},
+	}
+}
+
+func (wm *webhookManagerImpl) populateDeploymentWebhook(webhook *v1.MutatingWebhookConfiguration, caBundle []byte) {
+	ignore := v1.Ignore
+	none := v1.SideEffectClassNone
+	path := "/deployment-hook"
+
+	webhook.ObjectMeta.Name = deploymentWebhook
+	webhook.ObjectMeta.Labels = map[string]string{"app": "yunikorn"}
+	webhook.Webhooks = []v1.MutatingWebhook{
+		{
+			Name: deploymentWebhookConf,
+			ClientConfig: v1.WebhookClientConfig{
+				Service:  &v1.ServiceReference{Name: wm.serviceName, Namespace: wm.namespace, Path: &path},
+				CABundle: caBundle,
+			},
+			Rules: []v1.RuleWithOperations{{
+				Operations: []v1.OperationType{v1.Create},
+				Rule:       v1.Rule{APIGroups: []string{"*"}, APIVersions: []string{"*"}, Resources: []string{"deployments"}},
 			}},
 			FailurePolicy:           &ignore,
 			AdmissionReviewVersions: []string{"v1"},

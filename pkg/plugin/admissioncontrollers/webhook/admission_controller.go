@@ -32,6 +32,7 @@ import (
 
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -149,6 +150,39 @@ func admissionResponseBuilder(uid string, allowed bool, resultMessage string, pa
 	return res
 }
 
+func (c *admissionController) mutateDeployment(req *admissionv1.AdmissionRequest) *admissionv1.AdmissionResponse {
+	uid := string(req.UID)
+	var deployment appsv1.Deployment
+	if err := json.Unmarshal(req.Object.Raw, &deployment); err != nil {
+		log.Logger().Error("Unable to unmarshal deployment object", zap.Error(err))
+		return admissionResponseBuilder(uid, false, err.Error(), nil)
+	}
+
+	log.Logger().Info("Deployment mutation", zap.Any("User", req.UserInfo))
+	existingLabels := deployment.Spec.Template.Labels
+	result := make(map[string]string)
+	for k, v := range existingLabels {
+		result[k] = v
+	}
+	result["yunikorn.apache.org/username"] = req.UserInfo.Username
+	patch := make([]*patchOperation, 1)
+	patch[0] = &patchOperation{
+		Op:    "add",
+		Path:  "/spec/template/metadata/labels",
+		Value: result,
+	}
+	log.Logger().Info("generated patch",
+		zap.Any("patch", patch))
+
+	patchBytes, err2 := json.Marshal(patch)
+	if err2 != nil {
+		log.Logger().Error("failed to marshal patch", zap.Error(err2))
+		return admissionResponseBuilder(uid, false, err2.Error(), nil)
+	} else {
+		return admissionResponseBuilder(uid, true, "", patchBytes)
+	}
+}
+
 func (c *admissionController) mutate(req *admissionv1.AdmissionRequest) *admissionv1.AdmissionResponse {
 	if req == nil {
 		log.Logger().Warn("empty request received")
@@ -164,6 +198,8 @@ func (c *admissionController) mutate(req *admissionv1.AdmissionRequest) *admissi
 
 	var requestKind = req.Kind.Kind
 	var uid = string(req.UID)
+
+	log.Logger().Info("User name", zap.Any("info", req.UserInfo))
 
 	if requestKind != "Pod" {
 		log.Logger().Warn("request kind is not pod", zap.String("uid", uid),
@@ -183,6 +219,8 @@ func (c *admissionController) mutate(req *admissionv1.AdmissionRequest) *admissi
 		log.Logger().Error("unmarshal failed", zap.Error(err))
 		return admissionResponseBuilder(uid, false, err.Error(), nil)
 	}
+
+	log.Logger().Info("Unmarshalled object", zap.Any("pod", pod))
 
 	if labelAppValue, ok := pod.Labels[constants.LabelApp]; ok {
 		if labelAppValue == yunikornPod {
@@ -450,7 +488,7 @@ func (c *admissionController) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	urlPath := r.URL.Path
-	if urlPath != mutateURL && urlPath != validateConfURL {
+	if urlPath != mutateURL && urlPath != validateConfURL && urlPath != deploymentURL {
 		log.Logger().Debug("unsupported request received", zap.String("urlPath", urlPath))
 		http.Error(w, "request is neither mutation nor validation", http.StatusNotFound)
 		return
@@ -472,8 +510,11 @@ func (c *admissionController) serve(w http.ResponseWriter, r *http.Request) {
 			admissionResponse = c.mutate(req)
 		case validateConfURL:
 			admissionResponse = c.validateConf(req)
+		case deploymentURL:
+			admissionResponse = c.mutateDeployment(req)
 		}
 	}
+
 	admissionReview := admissionv1.AdmissionReview{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: admissionReviewAPIVersion,

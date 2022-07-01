@@ -50,6 +50,7 @@ const (
 	// legal URLs
 	mutateURL       = "/mutate"
 	validateConfURL = "/validate-conf"
+	deploymentURL   = "/deployment-hook"
 	healthURL       = "/health"
 )
 
@@ -61,6 +62,7 @@ type WebHook struct {
 }
 
 func main() {
+	log.Logger().Info("Webhook #02 started")
 	namespace := os.Getenv(admissionControllerNamespace)
 	serviceName := os.Getenv(admissionControllerService)
 	processNamespaces, ok := os.LookupEnv(admissionControllerProcessNamespaces)
@@ -164,6 +166,7 @@ func (wh *WebHook) Startup(certs *tls.Certificate) {
 	mux.HandleFunc(healthURL, wh.ac.health)
 	mux.HandleFunc(mutateURL, wh.ac.serve)
 	mux.HandleFunc(validateConfURL, wh.ac.serve)
+	mux.HandleFunc(deploymentURL, wh.ac.serve)
 
 	wh.server = &http.Server{
 		Addr: fmt.Sprintf(":%v", wh.port),
