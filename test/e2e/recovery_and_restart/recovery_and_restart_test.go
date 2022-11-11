@@ -19,6 +19,7 @@
 package recoveryandrestart_test
 
 import (
+	ctx "context"
 	"fmt"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/onsi/ginkgo"
 	"github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/apache/yunikorn-k8shim/test/e2e/framework/configmanager"
 	"github.com/apache/yunikorn-k8shim/test/e2e/framework/helpers/common"
@@ -171,9 +173,9 @@ var _ = ginkgo.Describe("", func() {
 		}
 
 		ginkgo.By("Waiting for sleep pods to be running")
-		err = kClient.WaitForJobPodsRunning(dev, job1.Name, parallelism, 30*time.Second)
+		err = kClient.WaitForJobPodsRunning(dev, job1.Name, parallelism, 120*time.Second)
 		Ω(err).NotTo(gomega.HaveOccurred())
-		err = kClient.WaitForJobPodsRunning(dev, job2.Name, parallelism, 30*time.Second)
+		err = kClient.WaitForJobPodsRunning(dev, job2.Name, parallelism, 120*time.Second)
 		Ω(err).NotTo(gomega.HaveOccurred())
 
 		ginkgo.By("Deleting sleep pods")
@@ -187,8 +189,28 @@ var _ = ginkgo.Describe("", func() {
 		sleepPods = append(sleepPods, sleep2Pods.Items...)
 
 		for _, pod := range sleepPods {
+			fmt.Fprintf(ginkgo.GinkgoWriter, "Total number of pods in namespace %s: %d\n",
+				dev, len(pods.Items))
+			fmt.Fprintf(ginkgo.GinkgoWriter, "Deleting pod %s with status %s message %s\n", pod.Name, pod.Status.Phase, pod.Status.Message)
 			podName := pod.GetName()
 			err := kClient.DeletePod(podName, dev)
+			if err != nil {
+				fmt.Fprintf(ginkgo.GinkgoWriter, "Error is %s\n", err.Error())
+				devEvents, err2 := kClient.GetClient().CoreV1().Events(dev).List(ctx.Background(), metav1.ListOptions{})
+				if err2 != nil {
+					fmt.Fprintf(ginkgo.GinkgoWriter, "Coudln't get events %s\n", err.Error())
+				} else {
+					eventItems := devEvents.Items
+					for _, event := range eventItems {
+						fmt.Fprintf(ginkgo.GinkgoWriter, "involedObj:%s name:%s reason:%s message:%s type:%s\n",
+							event.InvolvedObject.Name,
+							event.Name,
+							event.Reason,
+							event.Message,
+							event.Type)
+					}
+				}
+			}
 			Ω(err).NotTo(gomega.HaveOccurred())
 			fmt.Fprintf(ginkgo.GinkgoWriter, "Deleted pod %s\n", podName)
 		}
