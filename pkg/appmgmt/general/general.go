@@ -68,7 +68,7 @@ func (os *Manager) ServiceInit() error {
 			Type:     client.PodInformerHandlers,
 			FilterFn: os.filterPods,
 			AddFn:    os.AddPod,
-			UpdateFn: os.updatePod,
+			UpdateFn: os.UpdatePod,
 			DeleteFn: os.deletePod,
 		})
 	return nil
@@ -148,7 +148,7 @@ func (os *Manager) AddPod(obj interface{}) {
 
 // when pod resource is modified, we need to act accordingly
 // e.g vertical scale out the pod, this requires the scheduler to be aware of this
-func (os *Manager) updatePod(old, new interface{}) {
+func (os *Manager) UpdatePod(old, new interface{}) {
 	oldPod, err := utils.Convert2Pod(old)
 	if err != nil {
 		log.Logger().Error("expecting a pod object", zap.Error(err))

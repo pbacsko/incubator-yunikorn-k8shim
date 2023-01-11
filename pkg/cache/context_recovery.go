@@ -21,6 +21,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"github.com/apache/yunikorn-k8shim/pkg/cache/external"
 	"time"
 
 	"go.uber.org/zap"
@@ -207,6 +208,18 @@ func (ctx *Context) recover(mgr []interfaces.Recoverable, due time.Duration) err
 	}
 
 	return nil
+}
+
+func (ctx *Context) GetAssignedNodeForPod(name string) (string, bool) {
+	return ctx.schedulerCache.GetAssignedNodeForPod(name)
+}
+
+func (ctx *Context) DumpCache() {
+	ctx.schedulerCache.DumpState()
+}
+
+func (ctx *Context) GetCache() *external.SchedulerCache {
+	return ctx.schedulerCache
 }
 
 func waitAndListNodes(apiProvider client.APIProvider) ([]*corev1.Node, error) {

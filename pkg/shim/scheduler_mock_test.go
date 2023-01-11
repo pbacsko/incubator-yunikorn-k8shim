@@ -79,6 +79,7 @@ func (fc *MockScheduler) init() {
 	fc.scheduler = ss
 	fc.coreContext = serviceContext
 	fc.apiProvider = mockedAPIProvider
+
 }
 
 func (fc *MockScheduler) start() {
@@ -169,6 +170,10 @@ func (fc *MockScheduler) addTask(appID string, taskID string, ask *si.Resource) 
 			Pod:           pod,
 		},
 	})
+}
+
+func (fc *MockScheduler) completeTask(appID string, taskID string) {
+	fc.context.NotifyTaskComplete(appID, taskID)
 }
 
 func (fc *MockScheduler) waitForSchedulerState(t *testing.T, expectedState string) {

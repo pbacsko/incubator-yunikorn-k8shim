@@ -281,7 +281,7 @@ func TestUpdatePodWhenSucceed(t *testing.T) {
 		},
 	}
 
-	am.updatePod(&pod, &newPod)
+	am.UpdatePod(&pod, &newPod)
 
 	// this is to verify NotifyTaskComplete is called
 	assert.Equal(t, task.GetTaskState(), cache.TaskStates().Completed)
@@ -335,7 +335,7 @@ func TestUpdatePodWhenFailed(t *testing.T) {
 		},
 	}
 
-	am.updatePod(&pod, &newPod)
+	am.UpdatePod(&pod, &newPod)
 
 	managedApp := amProtocol.GetApplication("app00001")
 	assert.Assert(t, managedApp != nil)

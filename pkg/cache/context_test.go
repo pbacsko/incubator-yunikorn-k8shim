@@ -405,9 +405,9 @@ func TestAddPodToCache(t *testing.T) {
 		},
 	}
 
-	context.addPodToCache(nil)  // no-op, but should not crash
-	context.addPodToCache(pod1) // should be added
-	context.addPodToCache(pod2) // should skip as pod is terminated
+	context.AddPodToCache(nil)  // no-op, but should not crash
+	context.AddPodToCache(pod1) // should be added
+	context.AddPodToCache(pod2) // should skip as pod is terminated
 
 	_, ok := context.schedulerCache.GetPod("UID-00001")
 	assert.Check(t, ok, "active pod was not added")
@@ -457,22 +457,22 @@ func TestUpdatePodInCache(t *testing.T) {
 		},
 	}
 
-	context.addPodToCache(pod1)
+	context.AddPodToCache(pod1)
 	_, ok := context.schedulerCache.GetPod("UID-00001")
 	assert.Assert(t, ok, "pod1 is not present after adding")
 
 	// these should not fail, but are no-ops
-	context.updatePodInCache(nil, nil)
-	context.updatePodInCache(nil, pod1)
-	context.updatePodInCache(pod1, nil)
+	context.UpdatePodInCache(nil, nil)
+	context.UpdatePodInCache(nil, pod1)
+	context.UpdatePodInCache(pod1, nil)
 
 	// ensure a terminated pod is removed
-	context.updatePodInCache(pod1, pod3)
+	context.UpdatePodInCache(pod1, pod3)
 	found, ok := context.schedulerCache.GetPod("UID-00001")
 	assert.Check(t, !ok, "pod still found after termination")
 
 	// ensure a non-terminated pod is updated
-	context.updatePodInCache(pod1, pod2)
+	context.UpdatePodInCache(pod1, pod2)
 	found, ok = context.schedulerCache.GetPod("UID-00001")
 	if assert.Check(t, ok, "pod not found after update") {
 		assert.Check(t, found.GetAnnotations()["test.state"] == "updated", "pod state not updated")
@@ -505,8 +505,8 @@ func TestRemovePodFromCache(t *testing.T) {
 		Spec: v1.PodSpec{SchedulerName: "yunikorn"},
 	}
 
-	context.addPodToCache(pod1)
-	context.addPodToCache(pod2)
+	context.AddPodToCache(pod1)
+	context.AddPodToCache(pod2)
 	_, ok := context.schedulerCache.GetPod("UID-00001")
 	assert.Assert(t, ok, "pod1 is not present after adding")
 	_, ok = context.schedulerCache.GetPod("UID-00002")
@@ -951,7 +951,7 @@ func TestNodeEventPublishedCorrectly(t *testing.T) {
 			UID:       "uid_0001",
 		},
 	}
-	context.addNode(&node)
+	context.AddNode(&node)
 
 	eventRecords := make([]*si.EventRecord, 0)
 	message := "node_related_message"
@@ -1185,7 +1185,7 @@ func TestPendingPodAllocations(t *testing.T) {
 			UID:       "uid_0001",
 		},
 	}
-	context.addNode(&node1)
+	context.AddNode(&node1)
 
 	node2 := v1.Node{
 		ObjectMeta: apis.ObjectMeta{
@@ -1194,7 +1194,7 @@ func TestPendingPodAllocations(t *testing.T) {
 			UID:       "uid_0002",
 		},
 	}
-	context.addNode(&node2)
+	context.AddNode(&node2)
 
 	// add a new application
 	context.AddApplication(&interfaces.AddApplicationRequest{
@@ -1289,7 +1289,7 @@ func TestGetStateDump(t *testing.T) {
 		},
 		Spec: v1.PodSpec{SchedulerName: "yunikorn"},
 	}
-	context.addPodToCache(pod1)
+	context.AddPodToCache(pod1)
 
 	stateDumpStr, err := context.GetStateDump()
 	assert.NilError(t, err, "error during state dump")

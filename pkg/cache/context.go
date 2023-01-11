@@ -100,7 +100,7 @@ func NewContextWithBootstrapConfigMaps(apis client.APIProvider, bootstrapConfigM
 func (ctx *Context) AddSchedulingEventHandlers() {
 	ctx.apiProvider.AddEventHandler(&client.ResourceEventHandlers{
 		Type:     client.NodeInformerHandlers,
-		AddFn:    ctx.addNode,
+		AddFn:    ctx.AddNode,
 		UpdateFn: ctx.updateNode,
 		DeleteFn: ctx.deleteNode,
 	})
@@ -108,8 +108,8 @@ func (ctx *Context) AddSchedulingEventHandlers() {
 	ctx.apiProvider.AddEventHandler(&client.ResourceEventHandlers{
 		Type:     client.PodInformerHandlers,
 		FilterFn: ctx.filterPods,
-		AddFn:    ctx.addPodToCache,
-		UpdateFn: ctx.updatePodInCache,
+		AddFn:    ctx.AddPodToCache,
+		UpdateFn: ctx.UpdatePodInCache,
 		DeleteFn: ctx.removePodFromCache,
 	})
 
@@ -145,7 +145,7 @@ func (ctx *Context) SetPluginMode(pluginMode bool) {
 	ctx.pluginMode = pluginMode
 }
 
-func (ctx *Context) addNode(obj interface{}) {
+func (ctx *Context) AddNode(obj interface{}) {
 	node, err := convertToNode(obj)
 	if err != nil {
 		log.Logger().Error("node conversion failed", zap.Error(err))
@@ -216,7 +216,7 @@ func (ctx *Context) deleteNode(obj interface{}) {
 		fmt.Sprintf("node %s is deleted from the scheduler", node.Name))
 }
 
-func (ctx *Context) addPodToCache(obj interface{}) {
+func (ctx *Context) AddPodToCache(obj interface{}) {
 	pod, err := utils.Convert2Pod(obj)
 	if err != nil {
 		log.Logger().Error("failed to add pod to cache", zap.Error(err))
@@ -255,7 +255,7 @@ func (ctx *Context) removePodFromCache(obj interface{}) {
 	ctx.schedulerCache.RemovePod(pod)
 }
 
-func (ctx *Context) updatePodInCache(oldObj, newObj interface{}) {
+func (ctx *Context) UpdatePodInCache(oldObj, newObj interface{}) {
 	_, err := utils.Convert2Pod(oldObj)
 	if err != nil {
 		log.Logger().Error("failed to update pod in cache", zap.Error(err))

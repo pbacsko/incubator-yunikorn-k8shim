@@ -566,6 +566,17 @@ func (cache *SchedulerCache) dumpState(context string) {
 	}
 }
 
+func (cache *SchedulerCache) DumpState() {
+	log.Logger().Info("Scheduler cache state",
+		zap.Int("nodes", len(cache.nodesMap)),
+		zap.Int("pods", len(cache.podsMap)),
+		zap.Int("assumed", len(cache.assumedPods)),
+		zap.Int("pendingAllocs", len(cache.pendingAllocations)),
+		zap.Int("inProgressAllocs", len(cache.inProgressAllocations)),
+		zap.Int("podsAssigned", cache.nodePodCount()),
+		zap.Any("phases", cache.podPhases()))
+}
+
 func (cache *SchedulerCache) podPhases() map[string]int {
 	result := make(map[string]int)
 
@@ -704,4 +715,11 @@ func (cache *SchedulerCache) GetSchedulerCacheDao() SchedulerCacheDao {
 		PriorityClasses: priorityClasses,
 		SchedulingPods:  podSchedulingInfoByName,
 	}
+}
+
+func (cache *SchedulerCache) GetAssignedNodeForPod(name string) (string, bool) {
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
+	val, ok := cache.assignedPods[name]
+	return val, ok
 }
