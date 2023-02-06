@@ -158,10 +158,10 @@ function install_cluster() {
   # build docker images from latest code, so that we can install yunikorn with these latest images
   echo "step 2/10: building docker images from latest code"
   check_docker
-  QUIET="--quiet" REGISTRY=local VERSION=latest make image
-  exit_on_error "build docker images failed"
-  QUIET="--quiet" REGISTRY=local VERSION=latest make webtest_image
-  exit_on_error "build test web images failed"
+  #QUIET="--quiet" REGISTRY=local VERSION=latest make image
+  #exit_on_error "build docker images failed"
+  #QUIET="--quiet" REGISTRY=local VERSION=latest make webtest_image
+  #exit_on_error "build test web images failed"
 
   # install ginkgo and gomega for e2e tests.
   echo "step 3/10: installing Ginkgo & Gomega at $(go env GOPATH)/bin"
@@ -200,9 +200,9 @@ function install_cluster() {
   echo "step 9/10: pre-load yunikorn images"
   "${KIND}" load docker-image "local/yunikorn:${SCHEDULER_IMAGE}" --name "${CLUSTER_NAME}"
   exit_on_error "pre-load scheduler image failed: ${SCHEDULER_IMAGE}"
-  "${KIND}" load docker-image "local/yunikorn:${ADMISSION_IMAGE}" --name "${CLUSTER_NAME}"
+  "${KIND}" load docker-image "apache/yunikorn:${ADMISSION_IMAGE}" --name "${CLUSTER_NAME}"
   exit_on_error "pre-load admission controller image failed: ${ADMISSION_IMAGE}"
-  "${KIND}" load docker-image "local/yunikorn:${WEBTEST_IMAGE}" --name "${CLUSTER_NAME}"
+  "${KIND}" load docker-image "apache/yunikorn:${WEBTEST_IMAGE}" --name "${CLUSTER_NAME}"
   exit_on_error "pre-load web image failed: ${WEBTEST_IMAGE}"
 
   echo "step 10/10: installing yunikorn"
@@ -265,7 +265,7 @@ CHART_PATH="./yunikorn-release/helm-charts/yunikorn"
 GIT_CLONE=true
 SCHEDULER_IMAGE="scheduler-${DOCKER_ARCH}-latest"
 ADMISSION_IMAGE="admission-${DOCKER_ARCH}-latest"
-WEBTEST_IMAGE="webtest-${DOCKER_ARCH}-latest"
+WEBTEST_IMAGE="web-${DOCKER_ARCH}-latest"
 FORCE_KIND_INSTALL=false
 
 while [[ $# -gt 0 ]]; do

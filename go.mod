@@ -191,6 +191,10 @@ replace (
 	k8s.io/mount-utils => k8s.io/mount-utils v0.23.14
 	k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.23.14
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.23.14
+	
 	k8s.io/utils => k8s.io/utils v0.0.0-20211116205334-6203023598ed
 	sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6
+	
+	github.com/apache/yunikorn-core => ../incubator-yunikorn-core/
+	github.com/apache/yunikorn-scheduler-interface => ../yunikorn-scheduler-interface/
 )

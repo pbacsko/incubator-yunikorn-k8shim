@@ -443,6 +443,7 @@ func waitShimSchedulerState(shim *KubernetesShim, expectedState string, timeout 
 }
 
 func logMemStats(file *os.File, i int, phase string) {
+	runtime.GC()
 	memStats := runtime.MemStats{}
 	runtime.ReadMemStats(&memStats)
 	fmt.Printf("MemStats after iteration #%d, phase %s\n", i, phase)
@@ -455,6 +456,8 @@ func logMemStats(file *os.File, i int, phase string) {
 	fmt.Println("HeapInuse", memStats.HeapInuse)
 	fmt.Println("HeapReleased", memStats.HeapReleased)
 	fmt.Println("HeapObjects", memStats.HeapObjects)
+	fmt.Println("NumGC", memStats.NumGC)
+	fmt.Println("GCCPUFraction", memStats.GCCPUFraction)
 
 	buf := bytes.Buffer{}
 	buf.WriteString(fmt.Sprintf("MemStats after iteration #%d, phase %s\n", i, phase))
@@ -467,6 +470,8 @@ func logMemStats(file *os.File, i int, phase string) {
 	buf.WriteString(fmt.Sprintln("HeapInuse", memStats.HeapInuse))
 	buf.WriteString(fmt.Sprintln("HeapReleased", memStats.HeapReleased))
 	buf.WriteString(fmt.Sprintln("HeapObjects", memStats.HeapObjects))
+	buf.WriteString(fmt.Sprintln("NumGC", memStats.NumGC))
+	buf.WriteString(fmt.Sprintln("GCCPUFraction", memStats.GCCPUFraction))
 	buf.WriteString("****")
 	buf.WriteTo(file)
 }
