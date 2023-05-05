@@ -306,8 +306,7 @@ func TaskStates() *TStates {
 				"Failed", "Completed",
 			},
 			Terminated: []string{
-				"Rejected", "Killed", "Failed",
-				"Completed",
+				"Killed", "Failed", "Completed",
 			},
 		}
 	})

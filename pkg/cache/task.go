@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -39,6 +40,12 @@ import (
 	"github.com/looplab/fsm"
 	v1 "k8s.io/api/core/v1"
 )
+
+var fsmPool = sync.Pool{
+	New: func() any {
+		return newTaskState()
+	},
+}
 
 type Task struct {
 	taskID          string
@@ -58,6 +65,7 @@ type Task struct {
 	originator      bool
 	sm              *fsm.FSM
 	lock            *sync.RWMutex
+	finalState      atomic.Value
 }
 
 func NewTask(tid string, app *Application, ctx *Context, pod *v1.Pod) *Task {
@@ -103,7 +111,7 @@ func createTaskInternal(tid string, app *Application, resource *si.Resource,
 		pluginMode:    pluginMode,
 		originator:    originator,
 		context:       ctx,
-		sm:            newTaskState(),
+		sm:            fsmPool.Get().(*fsm.FSM),
 		lock:          &sync.RWMutex{},
 	}
 	if tgName := utils.GetTaskGroupFromPodSpec(pod); tgName != "" {
@@ -117,10 +125,20 @@ func createTaskInternal(tid string, app *Application, resource *si.Resource,
 func (task *Task) handle(te events.TaskEvent) error {
 	task.lock.Lock()
 	defer task.lock.Unlock()
+	if task.sm == nil {
+		return fmt.Errorf("task has no state machine because it has finished execution, "+
+			"the final state was %s", task.finalState)
+	}
 	err := task.sm.Event(context.Background(), te.GetEvent(), task, te.GetArgs())
 	// handle the same state transition not nil error (limit of fsm).
 	if err != nil && err.Error() != "no transition" {
 		return err
+	}
+	if task.isTerminated() {
+		task.finalState.Store(task.sm.Current())
+		task.sm.SetState(TaskStates().New)
+		fsmPool.Put(task.sm)
+		task.sm = nil
 	}
 	return nil
 }
@@ -128,6 +146,11 @@ func (task *Task) handle(te events.TaskEvent) error {
 func (task *Task) canHandle(te events.TaskEvent) bool {
 	task.lock.RLock()
 	defer task.lock.RUnlock()
+	if task.sm == nil {
+		log.Logger().Error("canHandle() was called after removing state machine")
+		return false
+	}
+
 	return task.sm.Can(te.GetEvent())
 }
 
@@ -150,6 +173,9 @@ func (task *Task) IsPlaceholder() bool {
 }
 
 func (task *Task) GetTaskState() string {
+	if finalState, ok := task.finalState.Load().(string); ok {
+		return finalState
+	}
 	// fsm has its own internal lock, we don't need to hold node's lock here
 	return task.sm.Current()
 }

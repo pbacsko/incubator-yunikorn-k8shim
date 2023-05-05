@@ -577,15 +577,15 @@ func TestGetNonTerminatedTaskAlias(t *testing.T) {
 	assert.Assert(t, is.Contains(res, "/test-00002"))
 
 	// set two tasks to terminated states
-	task1.sm.SetState(TaskStates().Rejected)
-	task2.sm.SetState(TaskStates().Rejected)
+	task1.sm.SetState(TaskStates().Failed)
+	task2.sm.SetState(TaskStates().Failed)
 	// check the tasks both in terminated states
 	// res should retuen empty
 	res = app.getNonTerminatedTaskAlias()
 	assert.Equal(t, len(res), 0)
 
 	// set two tasks to one is terminated, another is non-terminated
-	task1.sm.SetState(TaskStates().Rejected)
+	task1.sm.SetState(TaskStates().Failed)
 	task2.sm.SetState(TaskStates().Allocated)
 	// check the task, should only return task2's alias
 	res = app.getNonTerminatedTaskAlias()
