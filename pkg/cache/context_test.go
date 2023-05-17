@@ -97,7 +97,7 @@ func TestAddNodes(t *testing.T) {
 		},
 	}
 
-	ctx.addNode(&node)
+	ctx.AddNode(&node)
 	assert.Equal(t, true, ctx.schedulerCache.GetNode("host0001") != nil)
 	assert.Equal(t, true, ctx.nodes.getNode("host0001") != nil)
 }
@@ -133,7 +133,7 @@ func TestUpdateNodes(t *testing.T) {
 		},
 	}
 
-	ctx.addNode(&oldNode)
+	ctx.AddNode(&oldNode)
 	ctx.updateNode(&oldNode, &newNode)
 
 	assert.Equal(t, int64(2048*1000*1000), ctx.nodes.getNode("host0001").capacity.Resources[siCommon.Memory].Value)
@@ -151,7 +151,7 @@ func TestDeleteNodes(t *testing.T) {
 		},
 	}
 
-	ctx.addNode(&node)
+	ctx.AddNode(&node)
 	assert.Equal(t, true, ctx.schedulerCache.GetNode("host0001") != nil)
 	assert.Equal(t, true, ctx.nodes.getNode("host0001") != nil)
 
@@ -159,7 +159,7 @@ func TestDeleteNodes(t *testing.T) {
 	assert.Equal(t, true, ctx.schedulerCache.GetNode("host0001") == nil)
 	assert.Equal(t, true, ctx.nodes.getNode("host0001") == nil)
 
-	ctx.addNode(&node)
+	ctx.AddNode(&node)
 	assert.Equal(t, true, ctx.schedulerCache.GetNode("host0001") != nil)
 	assert.Equal(t, true, ctx.nodes.getNode("host0001") != nil)
 

@@ -214,6 +214,10 @@ func (ctx *Context) GetAssignedNodeForPod(name string) (string, bool) {
 	return ctx.schedulerCache.GetAssignedNodeForPod(name)
 }
 
+func (ctx *Context) GetAssignedPods() map[string]string {
+	return ctx.schedulerCache.GetAssignedPods()
+}
+
 func (ctx *Context) DumpCache() {
 	ctx.schedulerCache.DumpState()
 }

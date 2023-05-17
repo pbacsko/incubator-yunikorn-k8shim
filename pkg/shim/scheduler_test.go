@@ -24,11 +24,14 @@ import (
 	"github.com/apache/yunikorn-k8shim/pkg/appmgmt/general"
 	"github.com/apache/yunikorn-k8shim/pkg/common/constants"
 	"github.com/apache/yunikorn-k8shim/pkg/common/events"
+	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"os"
 	"runtime"
+	"runtime/pprof"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -49,6 +52,7 @@ import (
 )
 
 const nodeLabels = "{\"label1\":\"key1\",\"label2\":\"key2\"}"
+const numNodes = 2000
 
 func TestMemUsage(t *testing.T) {
 	configData := `
@@ -61,12 +65,11 @@ partitions:
           - name: a
             resources:
               guaranteed:
-                {memory: 64G, vcore: 100}
-              max:
-                {memory: 64G, vcore: 100}
+                {memory: 1500G, vcore: 100}
 `
 	file, err := os.OpenFile("/tmp/memstats.txt", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
 	assert.NilError(t, err)
+	log.GetZapConfigs().Level.SetLevel(zapcore.InfoLevel)
 
 	// init and register scheduler
 	events.SetRecorder(events.NewMockedRecorder())
@@ -74,6 +77,22 @@ partitions:
 	cluster.init()
 	cluster.start()
 	defer cluster.stop()
+
+	f, err := os.Create("/tmp/TestMemUsage-cpu.prof")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	h, err := os.Create("/tmp/TestMemUsage-heap.prof")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
+	defer pprof.WriteHeapProfile(h)
 
 	// ensure scheduler running
 	cluster.waitForSchedulerState(t, SchedulerStates().Running)
@@ -84,41 +103,116 @@ partitions:
 	logMemStats(file, cnt, "BEFORE_ADD_NODES")
 
 	// register nodes
-	for i := 0; i < 100; i++ {
+	for i := 0; i < numNodes; i++ {
 		addNode(cluster, "test.host."+strconv.Itoa(i))
 	}
-	time.Sleep(10 * time.Second)
-	for ; cnt < 50; cnt++ {
+	time.Sleep(5 * time.Second)
+
+	for ; cnt < 10; cnt++ {
 		logMemStats(file, cnt, "BEFORE_ADD_PODS")
 
 		// Add pods
-		pods := getTestPods(100, 10, "root.a")
+		pods := getTestPods(10, 100, "root.a")
 		for _, pod := range pods {
 			addPod(cluster, pod)
 		}
-		time.Sleep(10 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		// Update pods to Running state
-		newPods := make([]*v1.Pod, 0)
 		for _, pod := range pods {
-			oldPod, newPod := updatePodWithRunningStateAndNode(t, cluster, pod, v1.PodRunning)
-			updatePod(cluster, oldPod, newPod)
-			newPods = append(newPods, newPod)
+			updatePodWithRunningStateAndNode(cluster, pod, v1.PodRunning)
 		}
-		pods = newPods
-		time.Sleep(10 * time.Second)
+		time.Sleep(5 * time.Second)
 		logMemStats(file, cnt, "AFTER_ADD_PODS")
 
 		// Finish pods
-		newPods = make([]*v1.Pod, 0)
 		for _, pod := range pods {
-			oldPod, newPod := updatePodWithRunningStateAndNode(t, cluster, pod, v1.PodSucceeded)
-			updatePod(cluster, oldPod, newPod)
-			newPods = append(newPods, newPod)
+			updatePodWithRunningState(cluster, pod, v1.PodSucceeded)
 		}
-		pods = newPods
-		time.Sleep(10 * time.Second)
+		time.Sleep(20 * time.Second)
 		logMemStats(file, cnt, "AFTER_FINISH_PODS")
+	}
+}
+
+func TestMemUsage_PendingPods(t *testing.T) {
+	configData := `
+partitions:
+  - name: default
+    queues:
+      - name: root
+        submitacl: "*"
+        queues:
+          - name: a
+            resources:
+              guaranteed:
+                {memory: 150G, vcore: 100}
+              max:
+                {memory: 300G, vcore: 100}
+`
+	file, err := os.OpenFile("/tmp/memstats.txt", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
+	assert.NilError(t, err)
+	log.GetZapConfigs().Level.SetLevel(zapcore.InfoLevel)
+
+	// init and register scheduler
+	events.SetRecorder(events.NewMockedRecorder())
+	cluster := MockScheduler{}
+	cluster.init()
+	cluster.start()
+	defer cluster.stop()
+
+	f, err := os.Create("/tmp/TestMemUsage_PendingPods-cpu.prof")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	h, err := os.Create("/tmp/TestMemUsage_PendingPods-heap.prof")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
+	defer pprof.WriteHeapProfile(h)
+
+	// ensure scheduler running
+	cluster.waitForSchedulerState(t, SchedulerStates().Running)
+	err = cluster.updateConfig(configData)
+	assert.NilError(t, err, "update config failed")
+
+	cnt := 0
+	logMemStats(file, cnt, "BEFORE_ADD_NODES")
+
+	// register nodes
+	for i := 0; i < numNodes; i++ {
+		addNode(cluster, "test.host."+strconv.Itoa(i))
+	}
+	time.Sleep(5 * time.Second)
+
+	for ; cnt < 3; cnt++ {
+		// Add pods
+		pods := getTestPods(5, 2000, "root.a")
+		for _, pod := range pods {
+			addPod(cluster, pod)
+		}
+		time.Sleep(5 * time.Second)
+
+		// Update pods to Running state as they get scheduled
+		runnablePods := make(map[string]struct{})
+		finishedPods := make(map[string]struct{})
+		mapLock := &sync.Mutex{}
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go updatePodsWithRunningStateAndNodeForAssignedOnly(cluster,
+			pods, v1.PodRunning, mapLock, runnablePods, finishedPods, &wg)
+		go finishRunningPodsInBatches(cluster,
+			pods, mapLock, runnablePods, finishedPods, &wg)
+
+		fmt.Println("Testcase: waiting")
+		wg.Wait()
 	}
 }
 
@@ -349,6 +443,7 @@ func addNode(cluster MockScheduler, name string) {
 			Allocatable: v1.ResourceList{
 				v1.ResourceCPU:    *resource.NewMilliQuantity(16000, resource.DecimalSI),
 				v1.ResourceMemory: *resource.NewScaledQuantity(32, resource.Giga),
+				"pods":            *resource.NewScaledQuantity(110, resource.Scale(0)),
 			},
 		},
 	}
@@ -376,12 +471,12 @@ func getTestPods(noApps, noTasksPerApp int, queue string) []*v1.Pod {
 	pods := make([]*v1.Pod, 0)
 	resources := make(map[v1.ResourceName]resource.Quantity)
 	resources[v1.ResourceCPU] = *resource.NewMilliQuantity(10, resource.DecimalSI)
-	resources[v1.ResourceMemory] = *resource.NewScaledQuantity(10, resource.Mega)
+	resources[v1.ResourceMemory] = *resource.NewScaledQuantity(1, resource.Giga)
 
 	for i := 0; i < noApps; i++ {
 		appId := "app000" + strconv.Itoa(i) + "-" + strconv.FormatInt(time.Now().UnixMilli(), 10)
 		for j := 0; j < noTasksPerApp; j++ {
-			taskName := "task000" + strconv.Itoa(j)
+			taskName := appId + "-" + "task000" + strconv.Itoa(j)
 			pod := &v1.Pod{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Pod",
@@ -389,13 +484,14 @@ func getTestPods(noApps, noTasksPerApp int, queue string) []*v1.Pod {
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name: taskName,
-					UID:  types.UID("UID-" + appId + "-" + taskName),
+					UID:  types.UID("UID-" + taskName),
 					Annotations: map[string]string{
 						constants.AnnotationApplicationID: appId,
 						constants.AnnotationQueueName:     queue,
 					},
 				},
 				Spec: v1.PodSpec{
+					SchedulerName: constants.SchedulerName,
 					Containers: []v1.Container{
 						{Name: "container-01",
 							Resources: v1.ResourceRequirements{
@@ -412,17 +508,127 @@ func getTestPods(noApps, noTasksPerApp int, queue string) []*v1.Pod {
 	return pods
 }
 
-func updatePodWithRunningStateAndNode(t *testing.T, cluster MockScheduler, pod *v1.Pod, phase v1.PodPhase) (*v1.Pod, *v1.Pod) {
+func updatePodWithRunningState(cluster MockScheduler, pod *v1.Pod, phase v1.PodPhase) {
+	old := pod.DeepCopy()
+	pod.Status.Phase = phase
+	updatePod(cluster, old, pod)
+}
+
+func updatePodWithRunningStateAndNode(cluster MockScheduler, pod *v1.Pod, phase v1.PodPhase) {
 	old := pod.DeepCopy()
 	pod.Status.Phase = phase
 	node, ok := cluster.context.GetAssignedNodeForPod(string(pod.GetUID()))
 	if !ok {
-		cluster.context.DumpCache()
-		t.Fatal("Node not found in cache")
+		log.Logger().Info("Node not found for pod, likely it hasn't been scheduled",
+			zap.String("pod", pod.Name))
+		return
 	}
 	pod.Spec.NodeName = node
+	updatePod(cluster, old, pod)
+}
 
-	return old, pod
+func finishRunningPodsInBatches(cluster MockScheduler,
+	pods []*v1.Pod,
+	mapLock *sync.Mutex,
+	runnable map[string]struct{},
+	finished map[string]struct{},
+	wg *sync.WaitGroup) {
+	noRemainingCount := 0
+	for {
+		// total assigned (bound) pods
+		remaining := make(map[string]struct{}, 0)
+		for pod, _ := range cluster.context.GetAssignedPods() {
+			remaining[pod] = struct{}{}
+		}
+
+		if len(remaining) == 0 {
+			noRemainingCount++
+			if noRemainingCount == 5 {
+				break
+			}
+			fmt.Println("Running -> Succeeded: No assigned pods, waiting...")
+			time.Sleep(time.Second * 2)
+			continue
+		}
+
+		for {
+			if len(remaining) == 0 {
+				break
+			}
+
+			for _, pod := range pods {
+				key := string(pod.GetUID())
+
+				mapLock.Lock()
+				_, podRunnable := runnable[key]
+				mapLock.Unlock()
+
+				if !podRunnable {
+					continue
+				}
+
+				if _, ok := remaining[key]; ok {
+					old := pod.DeepCopy()
+					pod.Status.Phase = v1.PodSucceeded
+					updatePod(cluster, old, pod)
+					delete(remaining, key)
+					mapLock.Lock()
+					finished[key] = struct{}{}
+					mapLock.Unlock()
+				}
+			}
+			time.Sleep(time.Second)
+		}
+		time.Sleep(time.Second)
+	}
+
+	fmt.Println("Running -> Succeeded: finish")
+	wg.Done()
+}
+
+func updatePodsWithRunningStateAndNodeForAssignedOnly(cluster MockScheduler,
+	pods []*v1.Pod,
+	phase v1.PodPhase,
+	mapLock *sync.Mutex,
+	runnable map[string]struct{},
+	finished map[string]struct{},
+	wg *sync.WaitGroup) {
+	noAssignedCount := 0
+	for {
+		assigned := cluster.context.GetAssignedPods()
+		fmt.Printf("->Running: %d assigned pods\n", len(assigned))
+		if len(assigned) == 0 {
+			noAssignedCount++
+			if noAssignedCount == 5 {
+				break
+			}
+			fmt.Println("Scheduled->Running: No assigned pods, waiting...")
+			time.Sleep(time.Second * 2)
+			continue
+		}
+		for _, pod := range pods {
+			key := string(pod.GetUID())
+			if node, ok := assigned[key]; ok {
+				mapLock.Lock()
+				_, podFinished := finished[key]
+				mapLock.Unlock()
+				if podFinished {
+					continue
+				}
+
+				old := pod.DeepCopy()
+				pod.Status.Phase = phase
+				pod.Spec.NodeName = node
+				updatePod(cluster, old, pod)
+				mapLock.Lock()
+				runnable[key] = struct{}{}
+				mapLock.Unlock()
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	wg.Done()
 }
 
 func waitShimSchedulerState(shim *KubernetesShim, expectedState string, timeout time.Duration) error {

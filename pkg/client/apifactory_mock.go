@@ -276,7 +276,6 @@ func (m *MockedAPIProvider) RunEventHandler() {
 }
 
 func (m *MockedAPIProvider) Start() {
-	// no impl
 }
 
 func (m *MockedAPIProvider) Stop() {

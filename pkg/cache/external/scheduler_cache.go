@@ -567,6 +567,9 @@ func (cache *SchedulerCache) dumpState(context string) {
 }
 
 func (cache *SchedulerCache) DumpState() {
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
+
 	log.Logger().Info("Scheduler cache state",
 		zap.Int("nodes", len(cache.nodesMap)),
 		zap.Int("pods", len(cache.podsMap)),
@@ -720,6 +723,18 @@ func (cache *SchedulerCache) GetSchedulerCacheDao() SchedulerCacheDao {
 func (cache *SchedulerCache) GetAssignedNodeForPod(name string) (string, bool) {
 	cache.lock.RLock()
 	defer cache.lock.RUnlock()
+
 	val, ok := cache.assignedPods[name]
 	return val, ok
+}
+
+func (cache *SchedulerCache) GetAssignedPods() map[string]string {
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
+
+	out := make(map[string]string)
+	for k, v := range cache.assignedPods {
+		out[k] = v
+	}
+	return out
 }
