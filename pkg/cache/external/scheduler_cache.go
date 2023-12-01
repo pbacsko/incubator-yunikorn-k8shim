@@ -481,6 +481,18 @@ func (cache *SchedulerCache) GetPodNoLock(uid string) (*v1.Pod, bool) {
 	return nil, false
 }
 
+func (cache *SchedulerCache) AssumePodDirect(uid, hostName string, allBound bool) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+	pod, ok := cache.podsMap[uid]
+	if !ok {
+		panic(fmt.Sprintf("attempted to assume pod %s which is not in the cache", uid))
+	}
+	pod.Spec.NodeName = hostName
+	cache.updatePod(pod)
+	cache.assumedPods[uid] = allBound
+}
+
 func (cache *SchedulerCache) AssumePod(pod *v1.Pod, allBound bool) {
 	cache.lock.Lock()
 	defer cache.lock.Unlock()

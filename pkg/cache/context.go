@@ -660,7 +660,6 @@ func (ctx *Context) AssumePod(name string, node string) error {
 		// modifying its original reference. otherwise, it may have
 		// race when some other go-routines accessing it in parallel.
 		if targetNode := ctx.schedulerCache.GetNode(node); targetNode != nil {
-			assumedPod := pod.DeepCopy()
 			// assume pod volumes, this will update bindings info in cache
 			// assume pod volumes before assuming the pod
 			// this will update scheduler cache with essential PV/PVC binding info
@@ -672,7 +671,7 @@ func (ctx *Context) AssumePod(name string, node string) error {
 				podVolumeClaims, err := ctx.apiProvider.GetAPIs().VolumeBinder.GetPodVolumeClaims(pod)
 				if err != nil {
 					log.Log(log.ShimContext).Error("Failed to get pod volume claims",
-						zap.String("podName", assumedPod.Name),
+						zap.String("podName", pod.Name),
 						zap.Error(err))
 					return err
 				}
@@ -681,8 +680,8 @@ func (ctx *Context) AssumePod(name string, node string) error {
 				volumes, reasons, err := ctx.apiProvider.GetAPIs().VolumeBinder.FindPodVolumes(pod, podVolumeClaims, targetNode.Node())
 				if err != nil {
 					log.Log(log.ShimContext).Error("Failed to find pod volumes",
-						zap.String("podName", assumedPod.Name),
-						zap.String("nodeName", assumedPod.Spec.NodeName),
+						zap.String("podName", pod.Name),
+						zap.String("nodeName", node),
 						zap.Error(err))
 					return err
 				}
@@ -694,8 +693,8 @@ func (ctx *Context) AssumePod(name string, node string) error {
 					sReason := strings.Join(sReasons, ", ")
 					err = fmt.Errorf("pod %s has conflicting volume claims: %s", pod.Name, sReason)
 					log.Log(log.ShimContext).Error("Pod has conflicting volume claims",
-						zap.String("podName", assumedPod.Name),
-						zap.String("nodeName", assumedPod.Spec.NodeName),
+						zap.String("podName", pod.Name),
+						zap.String("nodeName", node),
 						zap.Error(err))
 					return err
 				}
@@ -705,8 +704,7 @@ func (ctx *Context) AssumePod(name string, node string) error {
 				}
 			}
 			// assign the node name for pod
-			assumedPod.Spec.NodeName = node
-			ctx.schedulerCache.AssumePod(assumedPod, allBound)
+			ctx.schedulerCache.AssumePodDirect(string(pod.UID), node, allBound)
 			return nil
 		}
 	}
