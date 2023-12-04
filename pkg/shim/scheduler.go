@@ -19,6 +19,8 @@
 package shim
 
 import (
+	"github.com/apache/yunikorn-core/pkg/entrypoint"
+	"github.com/apache/yunikorn-k8shim/pkg/common/constants"
 	"sync"
 	"time"
 
@@ -60,7 +62,20 @@ func NewShimScheduler(scheduler api.SchedulerAPI, configs *conf.SchedulerConf, b
 	// we have disabled re-sync to keep ourselves up-to-date
 	informerFactory := informers.NewSharedInformerFactory(kubeClient.GetClientSet(), 0)
 
-	apiFactory := client.NewAPIFactory(scheduler, informerFactory, configs, false)
+	apiFactory := client.NewAPIFactory(kubeClient, scheduler, informerFactory, configs, false)
+	context := cache.NewContextWithBootstrapConfigMaps(apiFactory, bootstrapConfigMaps)
+	rmCallback := cache.NewAsyncRMCallback(context)
+	appManager := cache.NewAMService(context, apiFactory)
+	return newShimSchedulerInternal(context, apiFactory, appManager, rmCallback)
+}
+
+func NewShimScheduler2(kubeClient client.KubeClient, configs *conf.SchedulerConf, bootstrapConfigMaps []*v1.ConfigMap) *KubernetesShim {
+	log.Log(log.Shim).Info("Starting scheduler", zap.String("name", constants.SchedulerName))
+	serviceContext := entrypoint.StartAllServicesWithLogger(log.RootLogger(), log.GetZapConfigs())
+	// we have disabled re-sync to keep ourselves up-to-date
+	informerFactory := informers.NewSharedInformerFactory(kubeClient.GetClientSet(), 0)
+
+	apiFactory := client.NewAPIFactory(kubeClient, serviceContext.RMProxy, informerFactory, configs, false)
 	context := cache.NewContextWithBootstrapConfigMaps(apiFactory, bootstrapConfigMaps)
 	rmCallback := cache.NewAsyncRMCallback(context)
 	appManager := cache.NewAMService(context, apiFactory)
@@ -68,7 +83,7 @@ func NewShimScheduler(scheduler api.SchedulerAPI, configs *conf.SchedulerConf, b
 }
 
 func NewShimSchedulerForPlugin(scheduler api.SchedulerAPI, informerFactory informers.SharedInformerFactory, configs *conf.SchedulerConf, bootstrapConfigMaps []*v1.ConfigMap) *KubernetesShim {
-	apiFactory := client.NewAPIFactory(scheduler, informerFactory, configs, false)
+	apiFactory := client.NewAPIFactory(nil, scheduler, informerFactory, configs, false)
 	context := cache.NewContextWithBootstrapConfigMaps(apiFactory, bootstrapConfigMaps)
 	utils.SetPluginMode(true)
 	rmCallback := cache.NewAsyncRMCallback(context)
@@ -143,13 +158,13 @@ func (ss *KubernetesShim) registerShimLayer() error {
 
 	buildInfoMap := conf.GetBuildInfoMap()
 
-	configMaps, err := ss.context.LoadConfigMaps()
+	/*configMaps, err := ss.context.LoadConfigMaps()
 	if err != nil {
 		log.Log(log.ShimScheduler).Error("failed to load yunikorn configmaps", zap.Error(err))
 		return err
-	}
+	}*/
 
-	confMap := conf.FlattenConfigMaps(configMaps)
+	confMap := conf.FlattenConfigMaps(ss.context.GetConfigMaps())
 	config := utils.GetCoreSchedulerConfigFromConfigMap(confMap)
 	extraConfig := utils.GetExtraConfigFromConfigMap(confMap)
 

@@ -21,7 +21,14 @@ package shim
 import (
 	"context"
 	"fmt"
+	client2 "github.com/apache/yunikorn-k8shim/pkg/client"
+	"github.com/apache/yunikorn-k8shim/pkg/common/events"
+	"github.com/apache/yunikorn-k8shim/pkg/conf"
+	"go.uber.org/zap"
 	"io"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes/fake"
 	"os"
 	"runtime/pprof"
 	"strconv"
@@ -51,6 +58,12 @@ partitions:
         submitacl: "*"
         queues:
           - name: a
+            limits:
+              - limit:
+                users:
+                - nobody
+                maxapplications: 100
+                maxresources: {memory: 10T, vcore: 100000}
           - name: b
           - name: c
           - name: d
@@ -67,6 +80,98 @@ partitions:
 	cpuProfilePath  = "/tmp/yunikorn-cpu.pprof"
 	heapProfilePath = "/tmp/yunikorn-heap.pprof"
 )
+
+func TestInformers(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	informerFactory := informers.NewSharedInformerFactory(client, 0)
+	podInformer := informerFactory.Core().V1().Pods().Informer()
+	stop := make(chan struct{})
+	go informerFactory.Start(stop)
+
+	podInformer.AddEventHandler(&SimpleHandler{})
+
+	time.Sleep(200 * time.Millisecond)
+	pod := &v1.Pod{}
+	pod.Name = "testpod"
+	pod.Namespace = "default"
+	client.Tracker().Add(pod)
+	pod.Status = v1.PodStatus{
+		Phase: v1.PodPending,
+	}
+	client.Tracker().Update(schema.GroupVersionResource{
+		Group:    "",
+		Version:  "v1",
+		Resource: "pods"}, pod, "default")
+	time.Sleep(time.Second)
+}
+
+func TestShimScheduler2(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	for i := 0; i < 10; i++ {
+		name := "test.host." + strconv.Itoa(i)
+		node := &v1.Node{
+			Spec: v1.NodeSpec{
+				Unschedulable: false,
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+				UID:  types.UID("UUID-" + name),
+			},
+			Status: v1.NodeStatus{
+				Conditions: []v1.NodeCondition{
+					{Type: v1.NodeReady, Status: v1.ConditionTrue},
+				},
+				Allocatable: v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewMilliQuantity(nodeCpuMilli, resource.DecimalSI),
+					v1.ResourceMemory: *resource.NewScaledQuantity(nodeMemGiB, resource.Giga),
+					v1.ResourcePods:   *resource.NewScaledQuantity(nodeNumPods, resource.Scale(0)),
+				},
+			},
+		}
+		client.Tracker().Add(node)
+	}
+	client.Tracker().Add(&v1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "default",
+		},
+	})
+
+	conf := conf.CreateDefaultConfig()
+	conf.SetTestMode(true)
+	events.SetRecorder(events.NewMockedRecorder())
+	kubeClient := client2.NewKubeClientMock(false)
+	kubeClient.SetClientSet(client)
+
+	ss := NewShimScheduler2(kubeClient, conf, []*v1.ConfigMap{nil, nil})
+	if err := ss.Run(); err != nil {
+		log.Log(log.Shim).Fatal("Unable to start scheduler", zap.Error(err))
+	}
+
+	time.Sleep(5 * time.Second)
+
+	pods := getTestPods(5, 5, "root.default")
+	for _, p := range pods {
+		client.Tracker().Add(p)
+	}
+
+	time.Sleep(time.Hour)
+}
+
+type SimpleHandler struct {
+}
+
+func (s *SimpleHandler) OnAdd(obj interface{}, isInInitialList bool) {
+	fmt.Printf("OnAdd: %v\n", obj)
+}
+
+func (s *SimpleHandler) OnUpdate(oldObj, newObj interface{}) {
+	fmt.Printf("OnUpdate: old: %v, new: %v\n", oldObj, newObj)
+
+}
+
+func (s *SimpleHandler) OnDelete(obj interface{}) {
+
+}
 
 // Simple performance test which measures the theoretical throughput of the scheduler core.
 func BenchmarkSchedulingThroughPut(b *testing.B) {
@@ -121,7 +226,9 @@ func BenchmarkSchedulingThroughPut(b *testing.B) {
 	collector := &metricsCollector{}
 	go collector.collectData()
 	err = wait.PollUntilContextTimeout(context.Background(), time.Second, time.Second*60, true, func(ctx context.Context) (done bool, err error) {
-		return cluster.GetPodBindStats().Success == totalPods, nil
+		s := cluster.GetPodBindStats().Success
+		fmt.Printf("Progress: number of pods succeeded: %d\n", s)
+		return s == totalPods, nil
 	})
 	assert.NilError(b, err, "scheduling did not finish in time")
 
@@ -233,6 +340,7 @@ func getTestPods(noApps, noTasksPerApp int, queue string) []*v1.Pod {
 						constants.AnnotationApplicationID: appId,
 						constants.AnnotationQueueName:     queue,
 					},
+					Namespace: "default",
 				},
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{

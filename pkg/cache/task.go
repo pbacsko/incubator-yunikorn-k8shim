@@ -57,7 +57,7 @@ type Task struct {
 	originator      bool
 	schedulingState TaskSchedulingState
 	sm              *fsm.FSM
-	lock            *sync.RWMutex
+	lock            sync.RWMutex
 }
 
 func NewTask(tid string, app *Application, ctx *Context, pod *v1.Pod) *Task {
@@ -101,7 +101,7 @@ func createTaskInternal(tid string, app *Application, resource *si.Resource,
 		context:         ctx,
 		sm:              newTaskState(),
 		schedulingState: TaskSchedPending,
-		lock:            &sync.RWMutex{},
+		lock:            sync.RWMutex{},
 	}
 	if tgName := utils.GetTaskGroupFromPodSpec(pod); tgName != "" {
 		task.taskGroupName = tgName

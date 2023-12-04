@@ -239,6 +239,12 @@ func (c *KubeClientMock) GetBindStats() BindStats {
 	return c.bindStats.copy()
 }
 
+func (c *KubeClientMock) SetClientSet(clientset kubernetes.Interface) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.clientSet = clientset
+}
+
 func getPodKey(pod *v1.Pod) string {
 	return pod.Namespace + "/" + pod.Name
 }

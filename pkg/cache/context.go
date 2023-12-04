@@ -1202,6 +1202,12 @@ func (ctx *Context) LoadConfigMaps() ([]*v1.ConfigMap, error) {
 	return []*v1.ConfigMap{defaults, config}, nil
 }
 
+func (ctx *Context) GetConfigMaps() []*v1.ConfigMap {
+	ctx.lock.RLock()
+	defer ctx.lock.RUnlock()
+	return ctx.configMaps
+}
+
 func (ctx *Context) GetStateDump() (string, error) {
 	log.Log(log.ShimContext).Info("State dump requested")
 
