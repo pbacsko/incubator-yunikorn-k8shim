@@ -21,14 +21,7 @@ package shim
 import (
 	"context"
 	"fmt"
-	client2 "github.com/apache/yunikorn-k8shim/pkg/client"
-	"github.com/apache/yunikorn-k8shim/pkg/common/events"
-	"github.com/apache/yunikorn-k8shim/pkg/conf"
-	"go.uber.org/zap"
 	"io"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes/fake"
 	"os"
 	"runtime/pprof"
 	"strconv"
@@ -38,14 +31,21 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/zap"
 	"gotest.tools/v3/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes/fake"
 
+	"github.com/apache/yunikorn-k8shim/pkg/client"
 	"github.com/apache/yunikorn-k8shim/pkg/common/constants"
+	"github.com/apache/yunikorn-k8shim/pkg/common/events"
+	"github.com/apache/yunikorn-k8shim/pkg/conf"
 	"github.com/apache/yunikorn-k8shim/pkg/log"
 )
 
@@ -88,25 +88,28 @@ func TestInformers(t *testing.T) {
 	stop := make(chan struct{})
 	go informerFactory.Start(stop)
 
-	podInformer.AddEventHandler(&SimpleHandler{})
+	_, err := podInformer.AddEventHandler(&SimpleHandler{})
+	assert.NilError(t, err)
 
 	time.Sleep(200 * time.Millisecond)
 	pod := &v1.Pod{}
 	pod.Name = "testpod"
 	pod.Namespace = "default"
-	client.Tracker().Add(pod)
+	err = client.Tracker().Add(pod)
+	assert.NilError(t, err)
 	pod.Status = v1.PodStatus{
 		Phase: v1.PodPending,
 	}
-	client.Tracker().Update(schema.GroupVersionResource{
+	err = client.Tracker().Update(schema.GroupVersionResource{
 		Group:    "",
 		Version:  "v1",
 		Resource: "pods"}, pod, "default")
+	assert.NilError(t, err)
 	time.Sleep(time.Second)
 }
 
 func TestShimScheduler2(t *testing.T) {
-	client := fake.NewSimpleClientset()
+	clientSet := fake.NewSimpleClientset()
 	for i := 0; i < 10; i++ {
 		name := "test.host." + strconv.Itoa(i)
 		node := &v1.Node{
@@ -128,22 +131,25 @@ func TestShimScheduler2(t *testing.T) {
 				},
 			},
 		}
-		client.Tracker().Add(node)
+		err := clientSet.Tracker().Add(node)
+		assert.NilError(t, err)
 	}
-	client.Tracker().Add(&v1.Namespace{
+
+	err := clientSet.Tracker().Add(&v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "default",
 		},
 	})
+	assert.NilError(t, err)
 
 	conf := conf.CreateDefaultConfig()
 	conf.SetTestMode(true)
 	events.SetRecorder(events.NewMockedRecorder())
-	kubeClient := client2.NewKubeClientMock(false)
-	kubeClient.SetClientSet(client)
+	kubeClient := client.NewKubeClientMock(false)
+	kubeClient.SetClientSet(clientSet)
 
 	ss := NewShimScheduler2(kubeClient, conf, []*v1.ConfigMap{nil, nil})
-	if err := ss.Run(); err != nil {
+	if err = ss.Run(); err != nil {
 		log.Log(log.Shim).Fatal("Unable to start scheduler", zap.Error(err))
 	}
 
@@ -151,7 +157,8 @@ func TestShimScheduler2(t *testing.T) {
 
 	pods := getTestPods(5, 5, "root.default")
 	for _, p := range pods {
-		client.Tracker().Add(p)
+		err = clientSet.Tracker().Add(p)
+		assert.NilError(t, err)
 	}
 
 	time.Sleep(time.Hour)
@@ -166,11 +173,9 @@ func (s *SimpleHandler) OnAdd(obj interface{}, isInInitialList bool) {
 
 func (s *SimpleHandler) OnUpdate(oldObj, newObj interface{}) {
 	fmt.Printf("OnUpdate: old: %v, new: %v\n", oldObj, newObj)
-
 }
 
 func (s *SimpleHandler) OnDelete(obj interface{}) {
-
 }
 
 // Simple performance test which measures the theoretical throughput of the scheduler core.
