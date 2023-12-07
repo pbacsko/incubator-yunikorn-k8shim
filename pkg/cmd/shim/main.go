@@ -50,7 +50,8 @@ func main() {
 	serviceContext := entrypoint.StartAllServicesWithLogger(log.RootLogger(), log.GetZapConfigs())
 
 	if serviceContext.RMProxy != nil {
-		ss := shim.NewShimScheduler(serviceContext.RMProxy, conf.GetSchedulerConf(), configMaps)
+		kubeClient := client.NewKubeClient(conf.GetSchedulerConf().KubeConfig)
+		ss := shim.NewShimScheduler(kubeClient, serviceContext.RMProxy, conf.GetSchedulerConf(), configMaps)
 		if err := ss.Run(); err != nil {
 			log.Log(log.Shim).Fatal("Unable to start scheduler", zap.Error(err))
 		}

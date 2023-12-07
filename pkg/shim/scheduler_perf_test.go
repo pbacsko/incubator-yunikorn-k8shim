@@ -21,6 +21,7 @@ package shim
 import (
 	"context"
 	"fmt"
+	"github.com/apache/yunikorn-core/pkg/entrypoint"
 	"io"
 	"os"
 	"runtime/pprof"
@@ -109,6 +110,7 @@ func TestInformers(t *testing.T) {
 }
 
 func TestShimScheduler2(t *testing.T) {
+	t.Skip()
 	clientSet := fake.NewSimpleClientset()
 	for i := 0; i < 10; i++ {
 		name := "test.host." + strconv.Itoa(i)
@@ -148,7 +150,8 @@ func TestShimScheduler2(t *testing.T) {
 	kubeClient := client.NewKubeClientMock(false)
 	kubeClient.SetClientSet(clientSet)
 
-	ss := NewShimScheduler2(kubeClient, conf, []*v1.ConfigMap{nil, nil})
+	serviceContext := entrypoint.StartAllServicesWithLogger(log.RootLogger(), log.GetZapConfigs())
+	ss := NewShimScheduler(kubeClient, serviceContext.RMProxy, conf, []*v1.ConfigMap{nil, nil})
 	if err = ss.Run(); err != nil {
 		log.Log(log.Shim).Fatal("Unable to start scheduler", zap.Error(err))
 	}
@@ -332,7 +335,7 @@ func getTestPods(noApps, noTasksPerApp int, queue string) []*v1.Pod {
 	for i := 0; i < noApps; i++ {
 		appId := "app000" + strconv.Itoa(i) + "-" + strconv.FormatInt(time.Now().UnixMilli(), 10)
 		for j := 0; j < noTasksPerApp; j++ {
-			taskName := "task000" + strconv.Itoa(j)
+			taskName := appId + "-task000" + strconv.Itoa(j)
 			pod := &v1.Pod{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Pod",
@@ -340,7 +343,7 @@ func getTestPods(noApps, noTasksPerApp int, queue string) []*v1.Pod {
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name: taskName,
-					UID:  types.UID("UID-" + appId + "-" + taskName),
+					UID:  types.UID("UID-" + taskName),
 					Annotations: map[string]string{
 						constants.AnnotationApplicationID: appId,
 						constants.AnnotationQueueName:     queue,

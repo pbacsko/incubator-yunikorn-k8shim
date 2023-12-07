@@ -53,6 +53,7 @@ github.com/apache/yunikorn-core v0.0.0-20231025072825-bc7c00124c4c h1:8LSd2HEo3u
 github.com/apache/yunikorn-core v0.0.0-20231025072825-bc7c00124c4c/go.mod h1:rlS7KYZHyIoWFe06goLBPNkqAtDxk61G+KFpNYOBmvM=
 github.com/apache/yunikorn-scheduler-interface v0.0.0-20231020041412-6f80d179257c h1:KTIC3f+3aQdAo42YRxs27VpDWY6y73bxXpWcAii2IlQ=
 github.com/apache/yunikorn-scheduler-interface v0.0.0-20231020041412-6f80d179257c/go.mod h1:3NQfrhroMqU++kDTroBrTyCRKAczwwX//Fkj/ag/rsY=
+github.com/apache/yunikorn-scheduler-interface v0.0.0-20231201001639-c81397b31653/go.mod h1:zDWV5y9Zh9DM1C65RCVXT1nhNNO8kykVW7bzPFamNYw=
 github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 h1:0CwZNZbxp69SHPdPJAN/hZIm0C4OItdklCFmMRWYpio=
 github.com/asaskevich/govalidator v0.0.0-20190424111038-f61b66f89f4a h1:idn718Q4B6AGu/h5Sxe66HYVdqdGu2l9Iebqhi/AEoA=
 github.com/asaskevich/govalidator v0.0.0-20190424111038-f61b66f89f4a/go.mod h1:lB+ZfQJz7igIIfQNfa7Ml4HSf2uFQQRzpGGRXenZAgY=

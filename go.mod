@@ -22,7 +22,7 @@ go 1.20
 
 require (
 	github.com/apache/yunikorn-core v0.0.0-20231025072825-bc7c00124c4c
-	github.com/apache/yunikorn-scheduler-interface v0.0.0-20231020041412-6f80d179257c
+	github.com/apache/yunikorn-scheduler-interface v0.0.0-20231201001639-c81397b31653
 	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.3.1
 	github.com/looplab/fsm v1.0.1
@@ -162,6 +162,7 @@ require (
 )
 
 replace (
+	github.com/apache/yunikorn-core => ../yunikorn-core/
 	golang.org/x/crypto => golang.org/x/crypto v0.14.0
 	golang.org/x/lint => golang.org/x/lint v0.0.0-20210508222113-6edffad5e616
 	golang.org/x/net => golang.org/x/net v0.17.0

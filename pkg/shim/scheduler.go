@@ -27,10 +27,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 
-	"github.com/apache/yunikorn-core/pkg/entrypoint"
 	"github.com/apache/yunikorn-k8shim/pkg/cache"
 	"github.com/apache/yunikorn-k8shim/pkg/client"
-	"github.com/apache/yunikorn-k8shim/pkg/common/constants"
 	"github.com/apache/yunikorn-k8shim/pkg/common/utils"
 	"github.com/apache/yunikorn-k8shim/pkg/conf"
 	"github.com/apache/yunikorn-k8shim/pkg/dispatcher"
@@ -56,26 +54,11 @@ var (
 	outstandingAppLogTimeout = 2 * time.Minute
 )
 
-func NewShimScheduler(scheduler api.SchedulerAPI, configs *conf.SchedulerConf, bootstrapConfigMaps []*v1.ConfigMap) *KubernetesShim {
-	kubeClient := client.NewKubeClient(configs.KubeConfig)
-
+func NewShimScheduler(kubeClient client.KubeClient, scheduler api.SchedulerAPI, configs *conf.SchedulerConf, bootstrapConfigMaps []*v1.ConfigMap) *KubernetesShim {
 	// we have disabled re-sync to keep ourselves up-to-date
 	informerFactory := informers.NewSharedInformerFactory(kubeClient.GetClientSet(), 0)
 
 	apiFactory := client.NewAPIFactory(kubeClient, scheduler, informerFactory, configs, false)
-	context := cache.NewContextWithBootstrapConfigMaps(apiFactory, bootstrapConfigMaps)
-	rmCallback := cache.NewAsyncRMCallback(context)
-	appManager := cache.NewAMService(context, apiFactory)
-	return newShimSchedulerInternal(context, apiFactory, appManager, rmCallback)
-}
-
-func NewShimScheduler2(kubeClient client.KubeClient, configs *conf.SchedulerConf, bootstrapConfigMaps []*v1.ConfigMap) *KubernetesShim {
-	log.Log(log.Shim).Info("Starting scheduler", zap.String("name", constants.SchedulerName))
-	serviceContext := entrypoint.StartAllServicesWithLogger(log.RootLogger(), log.GetZapConfigs())
-	// we have disabled re-sync to keep ourselves up-to-date
-	informerFactory := informers.NewSharedInformerFactory(kubeClient.GetClientSet(), 0)
-
-	apiFactory := client.NewAPIFactory(kubeClient, serviceContext.RMProxy, informerFactory, configs, false)
 	context := cache.NewContextWithBootstrapConfigMaps(apiFactory, bootstrapConfigMaps)
 	rmCallback := cache.NewAsyncRMCallback(context)
 	appManager := cache.NewAMService(context, apiFactory)
