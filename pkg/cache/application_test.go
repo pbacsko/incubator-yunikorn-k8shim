@@ -505,9 +505,11 @@ func (ms *mockSchedulerAPI) UpdateNode(request *si.NodeRequest) error {
 	return ms.UpdateNodeFn(request)
 }
 
-func (ms *mockSchedulerAPI) UpdateConfiguration(request *si.UpdateConfigurationRequest) error {
+func (ms *mockSchedulerAPI) UpdateConfiguration(_ *si.UpdateConfigurationRequest) error {
 	return nil
 }
+
+func (ms *mockSchedulerAPI) Stop() {}
 
 func assertAppState(t *testing.T, app *Application, expectedState string, duration time.Duration) {
 	deadline := time.Now().Add(duration)

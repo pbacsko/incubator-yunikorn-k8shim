@@ -81,7 +81,7 @@ func BenchmarkSchedulingThroughPut(b *testing.B) {
 	cluster := &MockScheduler{}
 	cluster.init()
 	assert.NilError(b, cluster.start(), "failed to initialize cluster")
-	defer cluster.stop()
+	//defer cluster.stop()
 
 	if profileCpu {
 		f, err := os.Create(cpuProfilePath)
@@ -111,7 +111,7 @@ func BenchmarkSchedulingThroughPut(b *testing.B) {
 	for i := 0; i < numNodes; i++ {
 		addNode(cluster, "test.host."+strconv.Itoa(i))
 	}
-	err = wait.PollUntilContextTimeout(context.Background(), time.Second, time.Second*60, true, func(ctx context.Context) (done bool, err error) {
+	err = wait.PollUntilContextTimeout(context.Background(), time.Second, time.Second*30, true, func(ctx context.Context) (done bool, err error) {
 		return cluster.GetActiveNodeCountInCore(partitionName) == numNodes, nil
 	})
 	assert.NilError(b, err, "node initialization did not finish in time")

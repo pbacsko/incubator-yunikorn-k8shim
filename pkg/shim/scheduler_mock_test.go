@@ -54,13 +54,11 @@ type MockScheduler struct {
 	scheduler   *KubernetesShim
 	coreContext *entrypoint.ServiceContext
 	apiProvider *client.MockedAPIProvider
-	stopChan    chan struct{}
 	started     atomic.Bool
 }
 
 func (fc *MockScheduler) init() {
 	conf.GetSchedulerConf().SetTestMode(true)
-	fc.stopChan = make(chan struct{})
 	serviceContext := entrypoint.StartAllServices()
 	fc.rmProxy = serviceContext.RMProxy
 	mockedAPIProvider := client.NewMockedAPIProvider(false)
@@ -253,7 +251,7 @@ func (fc *MockScheduler) waitAndVerifySchedulerAllocations(
 }
 
 func (fc *MockScheduler) stop() {
-	close(fc.stopChan)
+	fc.coreContext.StopAll()
 	fc.scheduler.Stop()
 	fc.apiProvider.Stop()
 	fc.started.Store(false)

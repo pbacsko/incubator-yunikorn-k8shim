@@ -118,11 +118,13 @@ func (api *SchedulerAPIMock) UpdateNode(request *si.NodeRequest) error {
 	return api.UpdateNodeFn(request)
 }
 
-func (api *SchedulerAPIMock) UpdateConfiguration(request *si.UpdateConfigurationRequest) error {
+func (api *SchedulerAPIMock) UpdateConfiguration(_ *si.UpdateConfigurationRequest) error {
 	api.lock.Lock()
 	defer api.lock.Unlock()
 	return nil
 }
+
+func (api *SchedulerAPIMock) Stop() {}
 
 func (api *SchedulerAPIMock) GetRegisterCount() int32 {
 	return atomic.LoadInt32(&api.registerCount)

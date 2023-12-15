@@ -19,7 +19,9 @@
 package shim
 
 import (
+	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -47,6 +49,7 @@ type KubernetesShim struct {
 	stopChan             chan struct{}
 	lock                 *sync.RWMutex
 	outstandingAppsFound bool
+	stopped              atomic.Bool
 }
 
 var (
@@ -186,6 +189,9 @@ func (ss *KubernetesShim) schedule() {
 }
 
 func (ss *KubernetesShim) Run() error {
+	if ss.stopped.Load() {
+		return errors.New("scheduler is already stopped")
+	}
 	// NOTE: the order of starting these services matter,
 	// please look at the comments before modifying the orders
 
@@ -230,16 +236,15 @@ func (ss *KubernetesShim) Run() error {
 }
 
 func (ss *KubernetesShim) Stop() {
-	log.Log(log.ShimScheduler).Info("stopping scheduler")
-	select {
-	case ss.stopChan <- struct{}{}:
-		// stop the dispatcher
-		dispatcher.Stop()
-		// stop the placeholder manager
-		ss.phManager.Stop()
-	default:
+	if ss.stopped.Load() {
 		log.Log(log.ShimScheduler).Info("scheduler is already stopped")
+		return
 	}
+	log.Log(log.ShimScheduler).Info("stopping scheduler")
+	close(ss.stopChan)
+	dispatcher.Stop()
+	ss.phManager.Stop()
+	ss.stopped.Store(true)
 }
 
 func (ss *KubernetesShim) checkOutstandingApps() {
