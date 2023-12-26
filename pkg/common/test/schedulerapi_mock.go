@@ -62,6 +62,8 @@ func NewSchedulerAPIMock() *SchedulerAPIMock {
 	}
 }
 
+func (api *SchedulerAPIMock) Stop() {}
+
 func (api *SchedulerAPIMock) RegisterFunction(rfn func(request *si.RegisterResourceManagerRequest,
 	callback api.ResourceManagerCallback) (*si.RegisterResourceManagerResponse, error)) *SchedulerAPIMock {
 	api.registerFn = rfn
