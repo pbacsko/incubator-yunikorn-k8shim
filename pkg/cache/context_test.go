@@ -257,7 +257,7 @@ func TestRemoveApplication(t *testing.T) {
 		},
 		ObjectMeta: apis.ObjectMeta{
 			Name: "remove-test-00001",
-			UID:  "UID-00001",
+			UID:  "task01",
 		},
 	}
 	pod2 := &v1.Pod{
@@ -267,9 +267,11 @@ func TestRemoveApplication(t *testing.T) {
 		},
 		ObjectMeta: apis.ObjectMeta{
 			Name: "remove-test-00002",
-			UID:  "UID-00002",
+			UID:  "task02",
 		},
 	}
+	context.schedulerCache.AddPod(pod1)
+	context.schedulerCache.AddPod(pod2)
 	// New task to application 1
 	// set task state in Pending (non-terminated)
 	task1 := NewTask("task01", app1, context, pod1)
@@ -712,22 +714,44 @@ func TestAddTask(t *testing.T) {
 	assert.Equal(t, len(context.applications["app00001"].GetPendingTasks()), 0)
 
 	// add a tasks to the existing application
+	pod1 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "pod-test-00001",
+			UID:  "task00001",
+		},
+	}
+	context.schedulerCache.AddPod(pod1)
 	task := context.AddTask(&AddTaskRequest{
 		Metadata: TaskMetadata{
 			ApplicationID: "app00001",
 			TaskID:        "task00001",
-			Pod:           &v1.Pod{},
+			Pod:           pod1,
 		},
 	})
 	assert.Assert(t, task != nil)
 	assert.Equal(t, task.GetTaskID(), "task00001")
 
 	// add another task
+	pod2 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "pod-test-00002",
+			UID:  "task00002",
+		},
+	}
+	context.schedulerCache.AddPod(pod2)
 	task = context.AddTask(&AddTaskRequest{
 		Metadata: TaskMetadata{
 			ApplicationID: "app00001",
 			TaskID:        "task00002",
-			Pod:           &v1.Pod{},
+			Pod:           pod2,
 		},
 	})
 	assert.Assert(t, task != nil)
@@ -738,7 +762,7 @@ func TestAddTask(t *testing.T) {
 		Metadata: TaskMetadata{
 			ApplicationID: "app00001",
 			TaskID:        "task00002",
-			Pod:           &v1.Pod{},
+			Pod:           pod2,
 		},
 	})
 	assert.Assert(t, task != nil)
@@ -788,11 +812,13 @@ func TestRecoverTask(t *testing.T) {
 
 	// add a tasks to the existing application
 	// this task was already allocated and Running
+	pod := newPodHelper("pod1", podNamespace, taskUID1, fakeNodeName, appID, v1.PodRunning)
+	context.schedulerCache.AddPod(pod)
 	task := context.AddTask(&AddTaskRequest{
 		Metadata: TaskMetadata{
 			ApplicationID: appID,
 			TaskID:        taskUID1,
-			Pod:           newPodHelper("pod1", podNamespace, taskUID1, fakeNodeName, appID, v1.PodRunning),
+			Pod:           pod,
 		},
 	})
 	assert.Assert(t, task != nil)
@@ -801,11 +827,13 @@ func TestRecoverTask(t *testing.T) {
 
 	// add a tasks to the existing application
 	// this task was already completed with state: Succeed
+	pod2 := newPodHelper("pod2", podNamespace, taskUID2, fakeNodeName, appID, v1.PodSucceeded)
+	context.schedulerCache.AddPod(pod2)
 	task = context.AddTask(&AddTaskRequest{
 		Metadata: TaskMetadata{
 			ApplicationID: appID,
 			TaskID:        taskUID2,
-			Pod:           newPodHelper("pod2", podNamespace, taskUID2, fakeNodeName, appID, v1.PodSucceeded),
+			Pod:           pod2,
 		},
 	})
 	assert.Assert(t, task != nil)
@@ -814,11 +842,13 @@ func TestRecoverTask(t *testing.T) {
 
 	// add a tasks to the existing application
 	// this task was already completed with state: Succeed
+	pod3 := newPodHelper("pod3", podNamespace, taskUID3, fakeNodeName, appID, v1.PodFailed)
+	context.schedulerCache.AddPod(pod3)
 	task = context.AddTask(&AddTaskRequest{
 		Metadata: TaskMetadata{
 			ApplicationID: appID,
 			TaskID:        taskUID3,
-			Pod:           newPodHelper("pod3", podNamespace, taskUID3, fakeNodeName, appID, v1.PodFailed),
+			Pod:           pod3,
 		},
 	})
 	assert.Assert(t, task != nil)
@@ -827,11 +857,13 @@ func TestRecoverTask(t *testing.T) {
 
 	// add a tasks to the existing application
 	// this task pod is still Pending
+	pod4 := newPodHelper("pod4", podNamespace, taskUID4, "", appID, v1.PodPending)
+	context.schedulerCache.AddPod(pod4)
 	task = context.AddTask(&AddTaskRequest{
 		Metadata: TaskMetadata{
 			ApplicationID: appID,
 			TaskID:        taskUID4,
-			Pod:           newPodHelper("pod4", podNamespace, taskUID4, "", appID, v1.PodPending),
+			Pod:           pod4,
 		},
 	})
 	assert.Assert(t, task != nil)

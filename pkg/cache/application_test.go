@@ -150,24 +150,68 @@ func TestFailApplication(t *testing.T) {
 			Requests: resources,
 		},
 	})
-	pod := &v1.Pod{
+	pod1 := &v1.Pod{
 		TypeMeta: apis.TypeMeta{
 			Kind:       "Pod",
 			APIVersion: "v1",
 		},
 		ObjectMeta: apis.ObjectMeta{
 			Name: "pod-test-00001",
-			UID:  "UID-00001",
+			UID:  "task01",
 		},
 		Spec: v1.PodSpec{
 			Containers: containers,
 		},
 	}
+	pod2 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "pod-test-00002",
+			UID:  "task02",
+		},
+		Spec: v1.PodSpec{
+			Containers: containers,
+		},
+	}
+	pod3 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "pod-test-00003",
+			UID:  "task03",
+		},
+		Spec: v1.PodSpec{
+			Containers: containers,
+		},
+	}
+	pod4 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "pod-test-00004",
+			UID:  "task04",
+		},
+		Spec: v1.PodSpec{
+			Containers: containers,
+		},
+	}
+	context.schedulerCache.AddPod(pod1)
+	context.schedulerCache.AddPod(pod2)
+	context.schedulerCache.AddPod(pod3)
+	context.schedulerCache.AddPod(pod4)
+
 	app := NewApplication(appID, "root.abc", "testuser", testGroups, map[string]string{}, ms)
-	task1 := NewTask("task01", app, context, pod)
-	task2 := NewTask("task02", app, context, pod)
-	task3 := NewTask("task03", app, context, pod)
-	task4 := NewTask("task04", app, context, pod)
+	task1 := NewTask("task01", app, context, pod1)
+	task2 := NewTask("task02", app, context, pod2)
+	task3 := NewTask("task03", app, context, pod3)
+	task4 := NewTask("task04", app, context, pod4)
 	// set task states to new/pending/scheduling/running
 	task1.sm.SetState(TaskStates().New)
 	task2.sm.SetState(TaskStates().Pending)
@@ -248,7 +292,7 @@ func TestSetUnallocatedPodsToFailedWhenFailApplication(t *testing.T) {
 		},
 		ObjectMeta: apis.ObjectMeta{
 			Name: "pod-test-00001",
-			UID:  "UID-00001",
+			UID:  "task01",
 		},
 		Spec: v1.PodSpec{
 			Containers: containers,
@@ -262,7 +306,7 @@ func TestSetUnallocatedPodsToFailedWhenFailApplication(t *testing.T) {
 		},
 		ObjectMeta: apis.ObjectMeta{
 			Name: "pod-test-00002",
-			UID:  "UID-00002",
+			UID:  "task02",
 		},
 		Spec: v1.PodSpec{
 			Containers: containers,
@@ -276,12 +320,15 @@ func TestSetUnallocatedPodsToFailedWhenFailApplication(t *testing.T) {
 		},
 		ObjectMeta: apis.ObjectMeta{
 			Name: "pod-test-00003",
-			UID:  "UID-00003",
+			UID:  "task03",
 		},
 		Spec: v1.PodSpec{
 			Containers: containers,
 		},
 	})
+	context.schedulerCache.AddPod(pod1)
+	context.schedulerCache.AddPod(pod2)
+	context.schedulerCache.AddPod(pod3)
 	assert.NilError(t, err)
 	app := NewApplication(appID, "root.abc", "testuser", testGroups, map[string]string{}, ms)
 	task1 := NewTask("task01", app, context, pod1)
@@ -356,7 +403,7 @@ func TestSetUnallocatedPodsToFailedWhenRejectApplication(t *testing.T) {
 		},
 		ObjectMeta: apis.ObjectMeta{
 			Name: "pod-test-00001",
-			UID:  "UID-00001",
+			UID:  "task01",
 		},
 		Spec: v1.PodSpec{
 			Containers: containers,
@@ -370,13 +417,14 @@ func TestSetUnallocatedPodsToFailedWhenRejectApplication(t *testing.T) {
 		},
 		ObjectMeta: apis.ObjectMeta{
 			Name: "pod-test-00002",
-			UID:  "UID-00002",
+			UID:  "task02",
 		},
 		Spec: v1.PodSpec{
 			Containers: containers,
 		},
 	})
-	assert.NilError(t, err)
+	context.schedulerCache.AddPod(pod1)
+	context.schedulerCache.AddPod(pod2)
 	app := NewApplication(appID, "root.abc", "testuser", testGroups, map[string]string{}, ms)
 	task1 := NewTask("task01", app, context, pod1)
 	task2 := NewTask("task02", app, context, pod2)
@@ -433,12 +481,13 @@ func TestReleaseAppAllocation(t *testing.T) {
 		},
 		ObjectMeta: apis.ObjectMeta{
 			Name: "pod-test-00001",
-			UID:  "UID-00001",
+			UID:  "task01",
 		},
 		Spec: v1.PodSpec{
 			Containers: containers,
 		},
 	}
+	context.schedulerCache.AddPod(pod)
 	app := NewApplication(appID, "root.abc", "testuser", testGroups, map[string]string{}, ms)
 	task := NewTask("task01", app, context, pod)
 	app.addTask(task)
@@ -487,6 +536,8 @@ type mockSchedulerAPI struct {
 	UpdateNodeFn          func(request *si.NodeRequest) error
 	UpdateConfigurationFn func(request *si.UpdateConfigurationRequest) error
 }
+
+func (ms *mockSchedulerAPI) Stop() {}
 
 func (ms *mockSchedulerAPI) RegisterResourceManager(request *si.RegisterResourceManagerRequest,
 	callback api.ResourceManagerCallback) (*si.RegisterResourceManagerResponse, error) {
@@ -537,7 +588,7 @@ func TestGetNonTerminatedTaskAlias(t *testing.T) {
 		},
 		ObjectMeta: apis.ObjectMeta{
 			Name: "test-00001",
-			UID:  "UID-00001",
+			UID:  "task01",
 		},
 	}
 	pod2 := &v1.Pod{
@@ -547,9 +598,11 @@ func TestGetNonTerminatedTaskAlias(t *testing.T) {
 		},
 		ObjectMeta: apis.ObjectMeta{
 			Name: "test-00002",
-			UID:  "UID-00002",
+			UID:  "task02",
 		},
 	}
+	context.schedulerCache.AddPod(pod1)
+	context.schedulerCache.AddPod(pod2)
 	// set two task to non-terminated states
 	taskID1 := "task01"
 	task1 := NewTask(taskID1, app, context, pod1)
@@ -803,50 +856,56 @@ func TestTryReservePostRestart(t *testing.T) {
 			Requests: resources,
 		},
 	})
-	task0 := NewTask("task00", app, context, &v1.Pod{
+	pod0 := &v1.Pod{
 		TypeMeta: apis.TypeMeta{
 			Kind:       "Pod",
 			APIVersion: "v1",
 		},
 		ObjectMeta: apis.ObjectMeta{
 			Name: "pod-test-00000",
-			UID:  "UID-00000",
+			UID:  "task00",
 		},
 		Spec: v1.PodSpec{
 			Containers: containers,
 		},
-	})
+	}
+	context.schedulerCache.AddPod(pod0)
+	task0 := NewTask("task00", app, context, pod0)
 	task0.allocationID = string(task0.pod.UID)
 	task0.nodeName = "fake-host"
 	task0.sm.SetState(TaskStates().Allocated)
 
-	task1 := NewTask("task01", app, context, &v1.Pod{
+	pod1 := &v1.Pod{
 		TypeMeta: apis.TypeMeta{
 			Kind:       "Pod",
 			APIVersion: "v1",
 		},
 		ObjectMeta: apis.ObjectMeta{
 			Name: "pod-test-00001",
-			UID:  "UID-00001",
+			UID:  "task01",
 		},
 		Spec: v1.PodSpec{
 			Containers: containers,
 		},
-	})
+	}
+	context.schedulerCache.AddPod(pod1)
+	task1 := NewTask("task01", app, context, pod1)
 
-	task2 := NewTask("task02", app, context, &v1.Pod{
+	pod2 := &v1.Pod{
 		TypeMeta: apis.TypeMeta{
 			Kind:       "Pod",
 			APIVersion: "v1",
 		},
 		ObjectMeta: apis.ObjectMeta{
 			Name: "pod-test-00002",
-			UID:  "UID-00002",
+			UID:  "task02",
 		},
 		Spec: v1.PodSpec{
 			Containers: containers,
 		},
-	})
+	}
+	context.schedulerCache.AddPod(pod2)
+	task2 := NewTask("task02", app, context, pod2)
 
 	app.addTask(task0)
 	app.addTask(task1)
@@ -920,17 +979,41 @@ func TestTriggerAppRecovery(t *testing.T) {
 
 func TestSkipReservationStage(t *testing.T) {
 	context := initContextForTest()
+	pod1 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "pod-test-00001",
+			UID:  "task0001",
+		},
+	}
+	context.schedulerCache.AddPod(pod1)
 	app := NewApplication("app00001", "root.queue", "test-user", testGroups, map[string]string{}, newMockSchedulerAPI())
-	app.addTask(NewTask("task0001", app, context, &v1.Pod{}))
+	app.addTask(NewTask("task0001", app, context, pod1))
 	skip := app.skipReservationStage()
 	assert.Equal(t, skip, true, "expected to skip reservation because there is no task groups defined")
 
 	// app has task groups defined, and contains 2 tasks, 1 Pending and 1 Allocated
 	// expect: skip reservation
 	app = NewApplication("app00001", "root.queue", "test-user", testGroups, map[string]string{}, newMockSchedulerAPI())
-	task1 := NewTask("task0001", app, context, &v1.Pod{})
+
+	pod2 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "pod-test-00001",
+			UID:  "task0002",
+		},
+	}
+	context.schedulerCache.AddPod(pod1)
+	context.schedulerCache.AddPod(pod2)
+	task1 := NewTask("task0001", app, context, pod1)
 	task1.sm.SetState(TaskStates().New)
-	task2 := NewTask("task0002", app, context, &v1.Pod{})
+	task2 := NewTask("task0002", app, context, pod2)
 	task2.sm.SetState(TaskStates().Allocated)
 	app.addTask(task1)
 	app.addTask(task2)
@@ -950,9 +1033,9 @@ func TestSkipReservationStage(t *testing.T) {
 	// app has task groups defined, and contains 2 tasks, both are New
 	// expect: do not skip reservation
 	app = NewApplication("app00001", "root.queue", "test-user", testGroups, map[string]string{}, newMockSchedulerAPI())
-	task1 = NewTask("task0001", app, context, &v1.Pod{})
+	task1 = NewTask("task0001", app, context, pod1)
 	task1.sm.SetState(TaskStates().New)
-	task2 = NewTask("task0002", app, context, &v1.Pod{})
+	task2 = NewTask("task0002", app, context, pod2)
 	task2.sm.SetState(TaskStates().New)
 	app.addTask(task1)
 	app.addTask(task2)
@@ -988,12 +1071,13 @@ func TestReleaseAppAllocationInFailingState(t *testing.T) {
 		},
 		ObjectMeta: apis.ObjectMeta{
 			Name: "pod-test-00001",
-			UID:  "UID-00001",
+			UID:  "task01",
 		},
 		Spec: v1.PodSpec{
 			Containers: containers,
 		},
 	}
+	context.schedulerCache.AddPod(pod)
 	app := NewApplication(appID, "root.abc", "testuser", testGroups, map[string]string{}, ms)
 	task := NewTask("task01", app, context, pod)
 	app.addTask(task)
@@ -1044,9 +1128,31 @@ func TestResumingStateTransitions(t *testing.T) {
 	// create a new app
 	app := NewApplication("app00001", "root.abc", "test-user",
 		testGroups, map[string]string{}, mockedAPIProvider.GetAPIs().SchedulerAPI)
-	task1 := NewTask("task0001", app, context, &v1.Pod{})
+	pod1 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "pod-test-00001",
+			UID:  "task0001",
+		},
+	}
+	context.schedulerCache.AddPod(pod1)
+	pod2 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "pod-test-00002",
+			UID:  "task0002",
+		},
+	}
+	context.schedulerCache.AddPod(pod2)
+	task1 := NewTask("task0001", app, context, pod1)
 	task1.sm.SetState(TaskStates().New)
-	task2 := NewTask("task0002", app, context, &v1.Pod{})
+	task2 := NewTask("task0002", app, context, pod2)
 	task2.sm.SetState(TaskStates().Allocated)
 
 	// Add tasks
@@ -1086,11 +1192,46 @@ func TestResumingStateTransitions(t *testing.T) {
 func TestGetPlaceholderTasks(t *testing.T) {
 	context := initContextForTest()
 	app := NewApplication(appID, "root.a", "testuser", testGroups, map[string]string{}, newMockSchedulerAPI())
-	task1 := NewTask("task0001", app, context, &v1.Pod{})
+	pod1 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "pod-test-00001",
+			UID:  "task0001",
+		},
+	}
+	context.schedulerCache.AddPod(pod1)
+	task1 := NewTask("task0001", app, context, pod1)
 	task1.placeholder = true
-	task2 := NewTask("task0002", app, context, &v1.Pod{})
+
+	pod2 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "pod-test-00002",
+			UID:  "task0002",
+		},
+	}
+	context.schedulerCache.AddPod(pod2)
+	task2 := NewTask("task0002", app, context, pod2)
 	task2.placeholder = true
-	task3 := NewTask("task0003", app, context, &v1.Pod{})
+
+	pod3 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "pod-test-00003",
+			UID:  "task0003",
+		},
+	}
+	context.schedulerCache.AddPod(pod3)
+	task3 := NewTask("task0003", app, context, pod3)
 
 	app.addTask(task1)
 	app.addTask(task2)
@@ -1115,6 +1256,7 @@ func TestPlaceholderTimeoutEvents(t *testing.T) {
 	}
 
 	amprotocol := NewMockedAMProtocol()
+	amprotocol.SetContext(context)
 	am := NewAMService(amprotocol, client.NewMockedAPIProvider(false))
 	am.podEventHandler.recoveryRunning = false
 	pod1 := v1.Pod{
@@ -1125,7 +1267,7 @@ func TestPlaceholderTimeoutEvents(t *testing.T) {
 		ObjectMeta: apis.ObjectMeta{
 			Name:      "pod00001",
 			Namespace: "default",
-			UID:       "UID-POD-00001",
+			UID:       "task01",
 			Labels: map[string]string{
 				"queue":         "root.a",
 				"applicationId": "app00001",
@@ -1136,6 +1278,7 @@ func TestPlaceholderTimeoutEvents(t *testing.T) {
 			Phase: v1.PodPending,
 		},
 	}
+	context.schedulerCache.AddPod(&pod1)
 
 	// add a pending pod through the AM service
 	am.AddPod(&pod1)
@@ -1148,7 +1291,7 @@ func TestPlaceholderTimeoutEvents(t *testing.T) {
 		ObjectMeta: apis.ObjectMeta{
 			Name:      "pod00002",
 			Namespace: "default",
-			UID:       "UID-POD-00002",
+			UID:       "task02",
 			Labels: map[string]string{
 				"queue":         "root.a",
 				"applicationId": "app00001",
@@ -1159,6 +1302,7 @@ func TestPlaceholderTimeoutEvents(t *testing.T) {
 			Phase: v1.PodPending,
 		},
 	}
+	context.schedulerCache.AddPod(pod)
 	app := amprotocol.GetApplication("app00001")
 	assert.Assert(t, app != nil)
 	assert.Equal(t, app.GetApplicationID(), "app00001")
@@ -1228,7 +1372,7 @@ func TestApplication_onReservationStateChange(t *testing.T) {
 	app.sm.SetState("Accepted")
 	app.onReservationStateChange()
 	// app goes to running (no taskgroups defined)
-	assertAppState(t, app, ApplicationStates().Running, 1*time.Second)
+	assertAppState(t, app, ApplicationStates().Running, time.Second)
 
 	// set taskGroups
 	app.setTaskGroups([]TaskGroup{
@@ -1254,14 +1398,47 @@ func TestApplication_onReservationStateChange(t *testing.T) {
 	// app stays in accepted with taskgroup defined
 	assertAppState(t, app, ApplicationStates().Accepted, 1*time.Second)
 
-	task1 := NewTask("task0001", app, context, &v1.Pod{})
+	pod1 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "pod-test-00001",
+			UID:  "task0001",
+		},
+	}
+	pod2 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "pod-test-00002",
+			UID:  "task0002",
+		},
+	}
+	pod3 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "pod-test-00003",
+			UID:  "task0003",
+		},
+	}
+	context.schedulerCache.AddPod(pod1)
+	context.schedulerCache.AddPod(pod2)
+	context.schedulerCache.AddPod(pod3)
+	task1 := NewTask("task0001", app, context, pod1)
 	task1.setTaskGroupName("test-group-1")
 	task1.placeholder = true
-	task2 := NewTask("task0002", app, context, &v1.Pod{})
+	task2 := NewTask("task0002", app, context, pod2)
 	task2.setTaskGroupName("test-group-2")
 	task2.placeholder = true
 	// not placeholder, unknown group
-	task3 := NewTask("task0003", app, context, &v1.Pod{})
+	task3 := NewTask("task0003", app, context, pod3)
 	task3.setTaskGroupName("unknown")
 
 	app.addTask(task1)
@@ -1296,3 +1473,22 @@ func (ctx *Context) addApplication(app *Application) {
 	defer ctx.lock.Unlock()
 	ctx.applications[app.applicationID] = app
 }
+
+/*func getPodForTest(uid string) *v1.Pod {
+	return &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: uid,
+			UID:  types.UID(uid),
+		},
+	}
+}
+
+func getPodForTestWithSpec(uid string, spec v1.PodSpec) *v1.Pod {
+	pod := getPodForTest(uid)
+	pod.Spec = spec
+	return pod
+}*/

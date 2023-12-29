@@ -33,6 +33,8 @@ import (
 
 func TestAMSvcAddPod(t *testing.T) {
 	amProtocol := NewMockedAMProtocol()
+	context := initContextForTest()
+	amProtocol.SetContext(context)
 	am := NewAMService(amProtocol, client.NewMockedAPIProvider(false))
 	am.podEventHandler.recoveryRunning = false
 
@@ -55,6 +57,7 @@ func TestAMSvcAddPod(t *testing.T) {
 			Phase: v1.PodPending,
 		},
 	}
+	context.schedulerCache.AddPod(&pod)
 
 	// add a pending pod through the AM service
 	am.AddPod(&pod)
@@ -92,6 +95,7 @@ func TestAMSvcAddPod(t *testing.T) {
 			Phase: v1.PodPending,
 		},
 	}
+	context.schedulerCache.AddPod(&pod1)
 
 	am.AddPod(&pod1)
 	assert.Equal(t, len(app.GetNewTasks()), 2)
@@ -116,6 +120,7 @@ func TestAMSvcAddPod(t *testing.T) {
 			Phase: v1.PodPending,
 		},
 	}
+	context.schedulerCache.AddPod(&pod2)
 
 	am.AddPod(&pod2)
 	app02 := amProtocol.GetApplication("app00002")
@@ -129,6 +134,8 @@ func TestAMSvcAddPod(t *testing.T) {
 
 func TestAMSvcOriginatorPod(t *testing.T) {
 	amProtocol := NewMockedAMProtocol()
+	context := initContextForTest()
+	amProtocol.SetContext(context)
 	am := NewAMService(amProtocol, client.NewMockedAPIProvider(false))
 	am.podEventHandler.recoveryRunning = false
 
@@ -151,6 +158,7 @@ func TestAMSvcOriginatorPod(t *testing.T) {
 			Phase: v1.PodPending,
 		},
 	}
+	context.schedulerCache.AddPod(&pod)
 
 	// add pod 2 as owner for pod 1
 	owner := apis.OwnerReference{
@@ -197,6 +205,7 @@ func TestAMSvcOriginatorPod(t *testing.T) {
 			Phase: v1.PodPending,
 		},
 	}
+	context.schedulerCache.AddPod(&pod1)
 	am.AddPod(&pod1)
 	assert.Equal(t, len(app.GetNewTasks()), 2)
 	task, err = app.GetTask("UID-POD-00001")
@@ -210,6 +219,8 @@ func TestAMSvcOriginatorPod(t *testing.T) {
 
 func TestAMSvcUpdatePodWhenSucceed(t *testing.T) {
 	amProtocol := NewMockedAMProtocol()
+	context := initContextForTest()
+	amProtocol.SetContext(context)
 	am := NewAMService(amProtocol, client.NewMockedAPIProvider(false))
 	am.podEventHandler.recoveryRunning = false
 
@@ -232,6 +243,7 @@ func TestAMSvcUpdatePodWhenSucceed(t *testing.T) {
 			Phase: v1.PodPending,
 		},
 	}
+	context.schedulerCache.AddPod(&pod)
 
 	// add a pending pod through the AM service
 	am.AddPod(&pod)
@@ -270,6 +282,7 @@ func TestAMSvcUpdatePodWhenSucceed(t *testing.T) {
 			Phase: v1.PodSucceeded,
 		},
 	}
+	context.schedulerCache.UpdatePod(&newPod)
 
 	am.updatePod(&pod, &newPod)
 
@@ -279,6 +292,8 @@ func TestAMSvcUpdatePodWhenSucceed(t *testing.T) {
 
 func TestAMSvcUpdatePodWhenFailed(t *testing.T) {
 	amProtocol := NewMockedAMProtocol()
+	context := initContextForTest()
+	amProtocol.SetContext(context)
 	am := NewAMService(amProtocol, client.NewMockedAPIProvider(false))
 	am.podEventHandler.recoveryRunning = false
 
@@ -301,6 +316,7 @@ func TestAMSvcUpdatePodWhenFailed(t *testing.T) {
 			Phase: v1.PodPending,
 		},
 	}
+	context.schedulerCache.AddPod(&pod)
 
 	// add a pending pod through the AM service
 	am.AddPod(&pod)
@@ -340,6 +356,8 @@ func TestAMSvcUpdatePodWhenFailed(t *testing.T) {
 
 func TestAMSvcDeletePod(t *testing.T) {
 	amProtocol := NewMockedAMProtocol()
+	context := initContextForTest()
+	amProtocol.SetContext(context)
 	am := NewAMService(amProtocol, client.NewMockedAPIProvider(false))
 	am.podEventHandler.recoveryRunning = false
 
@@ -362,6 +380,7 @@ func TestAMSvcDeletePod(t *testing.T) {
 			Phase: v1.PodPending,
 		},
 	}
+	context.schedulerCache.AddPod(&pod)
 
 	// add a pending pod through the AM service
 	am.AddPod(&pod)

@@ -131,7 +131,7 @@ func (task *Task) canHandle(te events.TaskEvent) bool {
 func (task *Task) GetTaskPod() *v1.Pod {
 	task.lock.RLock()
 	defer task.lock.RUnlock()
-	return task.pod
+	return task.getPod()
 }
 
 func (task *Task) GetTaskID() string {
@@ -176,7 +176,7 @@ func (task *Task) getTaskAllocationID() string {
 }
 
 func (task *Task) DeleteTaskPod(pod *v1.Pod) error {
-	return task.context.apiProvider.GetAPIs().KubeClient.Delete(task.pod)
+	return task.context.apiProvider.GetAPIs().KubeClient.Delete(task.getPod())
 }
 
 func (task *Task) UpdateTaskPodStatus(pod *v1.Pod) (*v1.Pod, error) {
@@ -208,9 +208,11 @@ func (task *Task) initialize() {
 	// task needs recovery means the task has already been
 	// scheduled by us with an allocation, instead of starting
 	// from New, directly set the task to Bound.
-	if utils.NeedRecovery(task.pod) {
-		task.allocationID = string(task.pod.UID)
-		task.nodeName = task.pod.Spec.NodeName
+	pod := task.getPod()
+
+	if utils.NeedRecovery(pod) {
+		task.allocationID = string(pod.UID)
+		task.nodeName = pod.Spec.NodeName
 		task.sm.SetState(TaskStates().Bound)
 		log.Log(log.ShimCacheTask).Info("set task as Bound",
 			zap.String("appID", task.applicationID),
@@ -223,9 +225,9 @@ func (task *Task) initialize() {
 	// that means the task was already allocated and completed
 	// the resources were already released, instead of starting
 	// from New, directly set the task to Completed
-	if utils.IsPodTerminated(task.pod) {
-		task.allocationID = string(task.pod.UID)
-		task.nodeName = task.pod.Spec.NodeName
+	if utils.IsPodTerminated(task.getPod()) {
+		task.allocationID = string(task.getPod().UID)
+		task.nodeName = task.getPod().Spec.NodeName
 		task.sm.SetState(TaskStates().Completed)
 		log.Log(log.ShimCacheTask).Info("set task as Completed",
 			zap.String("appID", task.applicationID),
@@ -242,19 +244,21 @@ func (task *Task) IsOriginator() bool {
 }
 
 func (task *Task) isPreemptSelfAllowed() bool {
-	value := utils.GetPodAnnotationValue(task.pod, constants.AnnotationAllowPreemption)
+	pod := task.getPod()
+
+	value := utils.GetPodAnnotationValue(pod, constants.AnnotationAllowPreemption)
 	switch value {
 	case constants.True:
 		return true
 	case constants.False:
 		return false
 	default:
-		return task.context.IsPreemptSelfAllowed(task.pod.Spec.PriorityClassName)
+		return task.context.IsPreemptSelfAllowed(pod.Spec.PriorityClassName)
 	}
 }
 
 func (task *Task) isPreemptOtherAllowed() bool {
-	policy := task.pod.Spec.PreemptionPolicy
+	policy := task.getPod().Spec.PreemptionPolicy
 	if policy == nil {
 		return true
 	}
@@ -282,7 +286,7 @@ func (task *Task) GetTaskSchedulingState() TaskSchedulingState {
 
 func (task *Task) handleSubmitTaskEvent() {
 	log.Log(log.ShimCacheTask).Debug("scheduling pod",
-		zap.String("podName", task.pod.Name))
+		zap.String("podName", task.getPod().Name))
 
 	// build preemption policy
 	preemptionPolicy := &si.PreemptionPolicy{
@@ -297,7 +301,7 @@ func (task *Task) handleSubmitTaskEvent() {
 		task.resource,
 		task.placeholder,
 		task.taskGroupName,
-		task.pod,
+		task.getPod(),
 		task.originator,
 		preemptionPolicy)
 	log.Log(log.ShimCacheTask).Debug("send update request", zap.Stringer("request", rr))
@@ -306,12 +310,12 @@ func (task *Task) handleSubmitTaskEvent() {
 		return
 	}
 
-	events.GetRecorder().Eventf(task.pod.DeepCopy(), nil, v1.EventTypeNormal, "Scheduling", "Scheduling",
+	events.GetRecorder().Eventf(task.getPod().DeepCopy(), nil, v1.EventTypeNormal, "Scheduling", "Scheduling",
 		"%s is queued and waiting for allocation", task.alias)
 	// if this task belongs to a task group, that means the app has gang scheduling enabled
 	// in this case, post an event to indicate the task is being gang scheduled
 	if !task.placeholder && task.taskGroupName != "" {
-		events.GetRecorder().Eventf(task.pod.DeepCopy(), nil,
+		events.GetRecorder().Eventf(task.getPod().DeepCopy(), nil,
 			v1.EventTypeNormal, "GangScheduling", "GangScheduling",
 			"Pod belongs to the taskGroup %s, it will be scheduled as a gang member", task.taskGroupName)
 	}
@@ -339,51 +343,51 @@ func (task *Task) postTaskAllocated() {
 		// plugin mode means we delegate this work to the default scheduler
 		if utils.IsPluginMode() {
 			log.Log(log.ShimCacheTask).Debug("allocating pod",
-				zap.String("podName", task.pod.Name),
-				zap.String("podUID", string(task.pod.UID)))
+				zap.String("podName", task.getPod().Name),
+				zap.String("podUID", string(task.getPod().UID)))
 
-			task.context.AddPendingPodAllocation(string(task.pod.UID), task.nodeName)
+			task.context.AddPendingPodAllocation(string(task.getPod().UID), task.nodeName)
 
 			dispatcher.Dispatch(NewBindTaskEvent(task.applicationID, task.taskID))
-			events.GetRecorder().Eventf(task.pod.DeepCopy(),
+			events.GetRecorder().Eventf(task.getPod().DeepCopy(),
 				nil, v1.EventTypeNormal, "Pending", "Pending",
 				"Pod %s is ready for scheduling on node %s", task.alias, task.nodeName)
 		} else {
 			// post a message to indicate the pod gets its allocation
-			events.GetRecorder().Eventf(task.pod.DeepCopy(),
+			events.GetRecorder().Eventf(task.getPod().DeepCopy(),
 				nil, v1.EventTypeNormal, "Scheduled", "Scheduled",
 				"Successfully assigned %s to node %s", task.alias, task.nodeName)
 
 			// before binding pod to node, first bind volumes to pod
 			log.Log(log.ShimCacheTask).Debug("bind pod volumes",
-				zap.String("podName", task.pod.Name),
-				zap.String("podUID", string(task.pod.UID)))
+				zap.String("podName", task.getPod().Name),
+				zap.String("podUID", string(task.getPod().UID)))
 			if task.context.apiProvider.GetAPIs().VolumeBinder != nil {
-				if err := task.context.bindPodVolumes(task.pod); err != nil {
+				if err := task.context.bindPodVolumes(task.getPod()); err != nil {
 					errorMessage := fmt.Sprintf("bind volumes to pod failed, name: %s, %s", task.alias, err.Error())
 					dispatcher.Dispatch(NewFailTaskEvent(task.applicationID, task.taskID, errorMessage))
-					events.GetRecorder().Eventf(task.pod.DeepCopy(),
+					events.GetRecorder().Eventf(task.getPod().DeepCopy(),
 						nil, v1.EventTypeWarning, "PodVolumesBindFailure", "PodVolumesBindFailure", errorMessage)
 					return
 				}
 			}
 
 			log.Log(log.ShimCacheTask).Debug("bind pod",
-				zap.String("podName", task.pod.Name),
-				zap.String("podUID", string(task.pod.UID)))
+				zap.String("podName", task.getPod().Name),
+				zap.String("podUID", string(task.getPod().UID)))
 
-			if err := task.context.apiProvider.GetAPIs().KubeClient.Bind(task.pod, task.nodeName); err != nil {
+			if err := task.context.apiProvider.GetAPIs().KubeClient.Bind(task.getPod(), task.nodeName); err != nil {
 				errorMessage := fmt.Sprintf("bind pod to node failed, name: %s, %s", task.alias, err.Error())
 				log.Log(log.ShimCacheTask).Error(errorMessage)
 				dispatcher.Dispatch(NewFailTaskEvent(task.applicationID, task.taskID, errorMessage))
-				events.GetRecorder().Eventf(task.pod.DeepCopy(), nil,
+				events.GetRecorder().Eventf(task.getPod().DeepCopy(), nil,
 					v1.EventTypeWarning, "PodBindFailure", "PodBindFailure", errorMessage)
 				return
 			}
 
-			log.Log(log.ShimCacheTask).Info("successfully bound pod", zap.String("podName", task.pod.Name))
+			log.Log(log.ShimCacheTask).Info("successfully bound pod", zap.String("podName", task.getPod().Name))
 			dispatcher.Dispatch(NewBindTaskEvent(task.applicationID, task.taskID))
-			events.GetRecorder().Eventf(task.pod.DeepCopy(), nil,
+			events.GetRecorder().Eventf(task.getPod().DeepCopy(), nil,
 				v1.EventTypeNormal, "PodBindSuccessful", "PodBindSuccessful",
 				"Pod %s is successfully bound to node %s", task.alias, task.nodeName)
 		}
@@ -422,7 +426,7 @@ func (task *Task) postTaskBound() {
 		// structure for podMaxInUnschedulablePodsDuration (default 5 minutes). Here we update the pod
 		// explicitly to move it back to the active queue.
 		// See: pkg/scheduler/internal/queue/scheduling_queue.go:isPodUpdated() for what is considered updated.
-		podCopy := task.pod.DeepCopy()
+		podCopy := task.getPod().DeepCopy()
 		if _, err := task.UpdateTaskPod(podCopy, func(pod *v1.Pod) {
 			// Ensure that the default scheduler detects the pod as having changed
 			if pod.Annotations == nil {
@@ -450,7 +454,7 @@ func (task *Task) postTaskRejected() {
 	dispatcher.Dispatch(NewFailTaskEvent(task.applicationID, task.taskID,
 		fmt.Sprintf("task %s failed because it is rejected by scheduler", task.alias)))
 
-	events.GetRecorder().Eventf(task.pod.DeepCopy(), nil,
+	events.GetRecorder().Eventf(task.getPod().DeepCopy(), nil,
 		v1.EventTypeWarning, "TaskRejected", "TaskRejected",
 		"Task %s is rejected by the scheduler", task.alias)
 }
@@ -467,7 +471,7 @@ func (task *Task) postTaskFailed(reason string) {
 		zap.String("appID", task.applicationID),
 		zap.String("taskID", task.taskID),
 		zap.String("reason", reason))
-	events.GetRecorder().Eventf(task.pod.DeepCopy(), nil,
+	events.GetRecorder().Eventf(task.getPod().DeepCopy(), nil,
 		v1.EventTypeNormal, "TaskFailed", "TaskFailed",
 		"Task %s is failed", task.alias)
 }
@@ -478,7 +482,7 @@ func (task *Task) postTaskFailed(reason string) {
 func (task *Task) beforeTaskCompleted() {
 	task.releaseAllocation()
 
-	events.GetRecorder().Eventf(task.pod.DeepCopy(), nil,
+	events.GetRecorder().Eventf(task.getPod().DeepCopy(), nil,
 		v1.EventTypeNormal, "TaskCompleted", "TaskCompleted",
 		"Task %s is completed", task.alias)
 }
@@ -533,8 +537,8 @@ func (task *Task) releaseAllocation() {
 // request away from the core scheduler.
 func (task *Task) sanityCheckBeforeScheduling() error {
 	// Check PVCs used by the pod
-	namespace := task.pod.Namespace
-	manifest := &(task.pod.Spec)
+	namespace := task.getPod().Namespace
+	manifest := &(task.getPod().Spec)
 	for i := range manifest.Volumes {
 		volume := &manifest.Volumes[i]
 		if volume.PersistentVolumeClaim == nil {
@@ -558,20 +562,27 @@ func (task *Task) UpdatePodCondition(podCondition *v1.PodCondition) (bool, *v1.P
 	task.lock.Lock()
 	defer task.lock.Unlock()
 
-	status := task.podStatus.DeepCopy()
-	pod := task.pod.DeepCopy()
+	taskPod := task.getPod()
+
+	status := taskPod.Status.DeepCopy()
+	pod := taskPod.DeepCopy()
 	pod.Status = *status
 	if !utils.PodUnderCondition(pod, podCondition) {
 		log.Log(log.ShimContext).Debug("updating pod condition",
-			zap.String("namespace", task.pod.Namespace),
-			zap.String("name", task.pod.Name),
+			zap.String("namespace", taskPod.Namespace),
+			zap.String("name", taskPod.Name),
 			zap.Any("podCondition", podCondition))
-		if podutil.UpdatePodCondition(&task.podStatus, podCondition) {
-			status = task.podStatus.DeepCopy()
+		if podutil.UpdatePodCondition(&taskPod.Status, podCondition) {
+			status = taskPod.Status.DeepCopy()
 			pod.Status = *status
 			return true, pod
 		}
 	}
 
 	return false, pod
+}
+
+func (task *Task) getPod() *v1.Pod {
+	pod, _ := task.context.schedulerCache.GetPod(task.taskID)
+	return pod
 }

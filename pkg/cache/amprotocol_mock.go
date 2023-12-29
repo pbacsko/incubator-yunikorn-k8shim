@@ -20,7 +20,6 @@ package cache
 
 import (
 	"fmt"
-
 	"go.uber.org/zap"
 
 	"github.com/apache/yunikorn-k8shim/pkg/common/test"
@@ -31,11 +30,16 @@ import (
 type MockedAMProtocol struct {
 	applications map[string]*Application
 	addTaskFn    func(request *AddTaskRequest)
+	context      *Context
 }
 
 func NewMockedAMProtocol() *MockedAMProtocol {
 	return &MockedAMProtocol{
 		applications: make(map[string]*Application)}
+}
+
+func (m *MockedAMProtocol) SetContext(context *Context) {
+	m.context = context
 }
 
 func (m *MockedAMProtocol) GetApplication(appID string) *Application {
@@ -93,7 +97,8 @@ func (m *MockedAMProtocol) AddTask(request *AddTaskRequest) *Task {
 					}
 				}
 			}
-			task := NewFromTaskMeta(request.Metadata.TaskID, app, nil, request.Metadata, originator)
+			task := NewFromTaskMeta(request.Metadata.TaskID, app, m.context, request.Metadata, originator)
+			//task.context = app.con
 			app.addTask(task)
 			log.Log(log.Test).Info("task added",
 				zap.String("appID", app.applicationID),

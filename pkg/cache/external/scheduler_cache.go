@@ -421,12 +421,13 @@ func (cache *SchedulerCache) updatePod(pod *v1.Pod) {
 	}
 
 	// if pod is not in a terminal state, add it back into cache
+	cache.podsMap[key] = pod
 	if !utils.IsPodTerminated(pod) {
 		log.Log(log.ShimCacheExternal).Debug("Putting pod in cache", zap.String("podName", pod.Name), zap.String("podKey", key))
 		cache.podsMap[key] = pod
 	} else {
 		log.Log(log.ShimCacheExternal).Debug("Removing terminated pod from cache", zap.String("podName", pod.Name), zap.String("podKey", key))
-		delete(cache.podsMap, key)
+		//delete(cache.podsMap, key)
 		delete(cache.assignedPods, key)
 		delete(cache.assumedPods, key)
 		delete(cache.pendingAllocations, key)
