@@ -215,12 +215,8 @@ func (ctx *Context) updateNodeInternal(node *v1.Node, register bool) {
 
 		if !common.Equals(prevCapacity, newCapacity) {
 			// update capacity
-			if capacity, occupied, ok := ctx.schedulerCache.UpdateCapacity(node.Name, newCapacity); ok {
-				if err := ctx.updateNodeResources(node, capacity, occupied); err != nil {
-					log.Log(log.ShimContext).Warn("Failed to update node capacity", zap.Error(err))
-				}
-			} else {
-				log.Log(log.ShimContext).Warn("Failed to update cached node capacity", zap.String("nodeName", node.Name))
+			if err := ctx.updateNodeResources(node, newCapacity); err != nil {
+				log.Log(log.ShimContext).Warn("Failed to update node capacity", zap.Error(err))
 			}
 		}
 	}
@@ -370,7 +366,11 @@ func (ctx *Context) updateForeignPod(pod *v1.Pod) {
 				zap.String("podName", pod.Name),
 				zap.String("podStatusBefore", podStatusBefore),
 				zap.String("podStatusCurrent", string(pod.Status.Phase)))
-			ctx.updateNodeOccupiedResources(pod.Spec.NodeName, pod.Namespace, pod.Name, common.GetPodResource(pod), schedulercache.AddOccupiedResource)
+			allocReq := common.CreateAllocationForForeignPod(pod)
+			if err := ctx.apiProvider.GetAPIs().SchedulerAPI.UpdateAllocation(allocReq); err != nil {
+				log.Log(log.ShimContext).Error("failed to add foreign allocation to the core",
+					zap.Error(err))
+			}
 		} else {
 			// pod is orphaned (references an unknown node)
 			log.Log(log.ShimContext).Info("skipping occupied resource update for assigned orphaned pod",
@@ -394,8 +394,12 @@ func (ctx *Context) updateForeignPod(pod *v1.Pod) {
 				zap.String("podStatusCurrent", string(pod.Status.Phase)))
 			// this means pod is terminated
 			// we need sub the occupied resource and re-sync with the scheduler-core
-			ctx.updateNodeOccupiedResources(pod.Spec.NodeName, pod.Namespace, pod.Name, common.GetPodResource(pod), schedulercache.SubOccupiedResource)
 			ctx.schedulerCache.RemovePod(pod)
+			releaseReq := common.CreateReleaseRequestForForeignPod(string(pod.UID), constants.DefaultPartition)
+			if err := ctx.apiProvider.GetAPIs().SchedulerAPI.UpdateAllocation(releaseReq); err != nil {
+				log.Log(log.ShimContext).Error("failed to remove foreign allocation from the core",
+					zap.Error(err))
+			}
 		} else {
 			// pod is orphaned (references an unknown node)
 			log.Log(log.ShimContext).Info("skipping occupied resource update for terminated orphaned pod",
@@ -441,51 +445,14 @@ func (ctx *Context) deleteYuniKornPod(pod *v1.Pod) {
 }
 
 func (ctx *Context) deleteForeignPod(pod *v1.Pod) {
-	oldPod := ctx.schedulerCache.GetPod(string(pod.UID))
-	if oldPod == nil {
-		// if pod is not in scheduler cache, no node updates are needed
-		log.Log(log.ShimContext).Debug("unknown foreign pod deleted, no resource updated needed",
-			zap.String("namespace", pod.Namespace),
-			zap.String("podName", pod.Name))
-		return
+	releaseReq := common.CreateReleaseRequestForForeignPod(string(pod.UID), constants.DefaultPartition)
+	if err := ctx.apiProvider.GetAPIs().SchedulerAPI.UpdateAllocation(releaseReq); err != nil {
+		log.Log(log.ShimContext).Error("failed to remove foreign allocation from the core",
+			zap.Error(err))
 	}
 
-	// conditions for release:
-	//   1. pod is already assigned to a node
-	//   2. pod was not in a terminal state before
-	//   3. pod references a known node
-	if !utils.IsPodTerminated(oldPod) {
-		if !ctx.schedulerCache.IsPodOrphaned(string(oldPod.UID)) {
-			log.Log(log.ShimContext).Debug("foreign pod deleted, triggering occupied resource update",
-				zap.String("namespace", pod.Namespace),
-				zap.String("podName", pod.Name),
-				zap.String("podStatusBefore", string(oldPod.Status.Phase)),
-				zap.String("podStatusCurrent", string(pod.Status.Phase)))
-			// this means pod is terminated
-			// we need sub the occupied resource and re-sync with the scheduler-core
-			ctx.updateNodeOccupiedResources(pod.Spec.NodeName, pod.Namespace, pod.Name, common.GetPodResource(pod), schedulercache.SubOccupiedResource)
-		} else {
-			// pod is orphaned (references an unknown node)
-			log.Log(log.ShimContext).Info("skipping occupied resource update for removed orphaned pod",
-				zap.String("namespace", pod.Namespace),
-				zap.String("podName", pod.Name),
-				zap.String("nodeName", pod.Spec.NodeName))
-		}
-		ctx.schedulerCache.RemovePod(pod)
-	}
-}
-
-func (ctx *Context) updateNodeOccupiedResources(nodeName string, namespace string, podName string, resource *si.Resource, opt schedulercache.UpdateType) {
-	if common.IsZero(resource) {
-		return
-	}
-	if node, capacity, occupied, ok := ctx.schedulerCache.UpdateOccupiedResource(nodeName, namespace, podName, resource, opt); ok {
-		if err := ctx.updateNodeResources(node, capacity, occupied); err != nil {
-			log.Log(log.ShimContext).Warn("scheduler rejected update to node occupied resources", zap.Error(err))
-		}
-	} else {
-		log.Log(log.ShimContext).Warn("unable to update occupied resources for node", zap.String("nodeName", nodeName))
-	}
+	log.Log(log.ShimContext).Debug("removing pod from cache", zap.String("podName", pod.Name))
+	ctx.schedulerCache.RemovePod(pod)
 }
 
 // filter configMap for the scheduler
@@ -1492,7 +1459,6 @@ func (ctx *Context) registerNodes(nodes []*v1.Node) ([]*v1.Node, error) {
 				constants.DefaultNodeAttributeRackNameKey: constants.DefaultRackName,
 			},
 			SchedulableResource: common.GetNodeResource(&nodeStatus),
-			OccupiedResource:    common.NewResourceBuilder().Build(),
 		})
 		pendingNodes[node.Name] = node
 	}
@@ -1559,8 +1525,8 @@ func (ctx *Context) decommissionNode(node *v1.Node) error {
 	return ctx.apiProvider.GetAPIs().SchedulerAPI.UpdateNode(request)
 }
 
-func (ctx *Context) updateNodeResources(node *v1.Node, capacity *si.Resource, occupied *si.Resource) error {
-	request := common.CreateUpdateRequestForUpdatedNode(node.Name, capacity, occupied)
+func (ctx *Context) updateNodeResources(node *v1.Node, capacity *si.Resource) error {
+	request := common.CreateUpdateRequestForUpdatedNode(node.Name, capacity)
 	return ctx.apiProvider.GetAPIs().SchedulerAPI.UpdateNode(request)
 }
 

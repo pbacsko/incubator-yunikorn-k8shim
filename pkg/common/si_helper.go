@@ -114,6 +114,34 @@ func CreateAllocationForTask(appID, taskID, nodeID string, resource *si.Resource
 	}
 }
 
+func CreateAllocationForForeignPod(pod *v1.Pod) *si.AllocationRequest {
+	podType := common.AllocTypeDefault
+	for _, ref := range pod.OwnerReferences {
+		if ref.Kind == constants.NodeKind {
+			podType = common.AllocTypeStatic
+			break
+		}
+	}
+
+	allocation := si.Allocation{
+		AllocationTags: map[string]string{
+			common.Foreign: podType,
+		},
+		AllocationKey:    string(pod.UID),
+		ResourcePerAlloc: GetPodResource(pod),
+		Priority:         CreatePriorityForTask(pod),
+		NodeID:           pod.Spec.NodeName,
+	}
+
+	// add creation time for ask
+	allocation.AllocationTags[common.CreationTime] = strconv.FormatInt(pod.CreationTimestamp.Unix(), 10)
+
+	return &si.AllocationRequest{
+		Allocations: []*si.Allocation{&allocation},
+		RmID:        conf.GetSchedulerConf().ClusterID,
+	}
+}
+
 func GetTerminationTypeFromString(terminationTypeStr string) si.TerminationType {
 	if v, ok := si.TerminationType_value[terminationTypeStr]; ok {
 		return si.TerminationType(v)
@@ -141,13 +169,31 @@ func CreateReleaseRequestForTask(appID, taskID, partition, terminationType strin
 	}
 }
 
+func CreateReleaseRequestForForeignPod(uid, partition string) *si.AllocationRequest {
+	allocToRelease := make([]*si.AllocationRelease, 1)
+	allocToRelease[0] = &si.AllocationRelease{
+		AllocationKey:   uid,
+		PartitionName:   partition,
+		TerminationType: si.TerminationType_STOPPED_BY_RM,
+		Message:         "pod terminated",
+	}
+
+	releaseRequest := si.AllocationReleasesRequest{
+		AllocationsToRelease: allocToRelease,
+	}
+
+	return &si.AllocationRequest{
+		Releases: &releaseRequest,
+		RmID:     conf.GetSchedulerConf().ClusterID,
+	}
+}
+
 // CreateUpdateRequestForUpdatedNode builds a NodeRequest for capacity and occupied resource updates
-func CreateUpdateRequestForUpdatedNode(nodeID string, capacity *si.Resource, occupied *si.Resource) *si.NodeRequest {
+func CreateUpdateRequestForUpdatedNode(nodeID string, capacity *si.Resource) *si.NodeRequest {
 	nodeInfo := &si.NodeInfo{
 		NodeID:              nodeID,
 		Attributes:          map[string]string{},
 		SchedulableResource: capacity,
-		OccupiedResource:    occupied,
 		Action:              si.NodeInfo_UPDATE,
 	}
 
