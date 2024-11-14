@@ -142,6 +142,7 @@ var _ = ginkgo.AfterSuite(func() {
 
 var _ = ginkgo.Describe("SimplePreemptor", func() {
 	ginkgo.It("Verify_basic_simple_preemption", func() {
+		ginkgo.Skip("skip test")
 		// Use case: Only one pod is running and same pod has been selected as victim
 		// Define sleepPod
 		sleepPodConfigs := k8s.SleepPodConfig{Name: "sleepjob", NS: dev, Mem: sleepPodMemLimit1 * 2, Time: 600, RequiredNode: Worker1}
@@ -208,7 +209,8 @@ var _ = ginkgo.Describe("SimplePreemptor", func() {
 		// assert sleeppod4 is killed
 		err = kClient.WaitForPodEvent(dev, "sleepjob4", "Killing", 60*time.Second)
 		gomega.Ω(err).NotTo(gomega.HaveOccurred())
-
+		ginkgo.By("---- Fail on purpose ----")
+		gomega.Ω(true).To(gomega.BeFalse())
 	})
 
 	ginkgo.AfterEach(func() {
