@@ -21,6 +21,7 @@ package shim
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"gotest.tools/v3/assert"
 	v1 "k8s.io/api/core/v1"
@@ -412,4 +413,154 @@ func createTestPod(queue string, appID string, taskID string, taskResource *si.R
 			Phase: v1.PodPending,
 		},
 	}
+}
+
+// Simulate DaemonSet preemption
+// Setup:
+// * 2 nodes (node-1, node-2)
+// * node-1 is almost full w/ 2 pods (pod1Node1, pod2Node2)
+// * node-2 is empty
+// * submit a DS pod to node-1 (requiredNode)
+// * preemption is triggered (pod2Node1)
+// * delete pod2Node1
+// * test is paused with time.Sleep(), behavior can be observed on the console
+func TestDeamonsetPreemption(t *testing.T) {
+	configData := `
+partitions:
+  - name: default
+    queues:
+      - name: root
+        submitacl: "*"
+        queues:
+          - name: default
+`
+	cluster := MockScheduler{}
+	cluster.init()
+	node1 := &v1.Node{
+		Spec: v1.NodeSpec{
+			Unschedulable: false,
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name: "node-1",
+			UID:  types.UID("UUID-node-1"),
+		},
+		Status: v1.NodeStatus{
+			Conditions: []v1.NodeCondition{
+				{Type: v1.NodeReady, Status: v1.ConditionTrue},
+			},
+			Allocatable: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(nodeCpuMilli, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewScaledQuantity(nodeMemGiB, resource.Giga),
+				v1.ResourcePods:   *resource.NewScaledQuantity(nodeNumPods, resource.Scale(0)),
+			},
+		},
+	}
+
+	node2 := node1.DeepCopy()
+	node2.Name = "node-2"
+	node2.UID = "UUID-node-2"
+	cluster.AddNodeToLister(node1)
+	cluster.AddNodeToLister(node2)
+
+	containers := make([]v1.Container, 0)
+	c1Resources := make(map[v1.ResourceName]resource.Quantity)
+	c1Resources[v1.ResourceCPU] = *resource.NewMilliQuantity(1, resource.DecimalSI)
+	c1Resources[v1.ResourceMemory] = *resource.NewScaledQuantity(7, resource.Giga)
+
+	containers = append(containers, v1.Container{
+		Name: "container-01",
+		Resources: v1.ResourceRequirements{
+			Requests: c1Resources,
+		},
+	})
+
+	pod1Node1 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name:      "pod1Node1",
+			Namespace: "default",
+			UID:       types.UID("uid-pod1Node1"),
+			Labels: map[string]string{
+				constants.LabelApplicationID: "app-1",
+				constants.LabelQueueName:     "root.default",
+			},
+		},
+		Spec: v1.PodSpec{
+			SchedulerName: constants.SchedulerName,
+			Containers:    containers,
+			NodeName:      "node-1",
+		},
+		Status: v1.PodStatus{
+			Phase: v1.PodRunning,
+		},
+	}
+
+	pod2Node1 := pod1Node1.DeepCopy()
+	pod2Node1.Name = "pod2Node1"
+	pod2Node1.Spec.NodeName = "node-1"
+	pod2Node1.UID = "uid-pod2Node1"
+
+	cluster.AddPodToLister(pod1Node1)
+	cluster.AddPodToLister(pod2Node1)
+
+	assert.NilError(t, cluster.start(), "failed to start cluster")
+	defer cluster.stop()
+	err := cluster.updateConfig(configData, nil)
+	assert.NilError(t, err)
+	// wait for YK start
+	time.Sleep(time.Second * 2)
+
+	dsPod1 := &v1.Pod{
+		TypeMeta: apis.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: apis.ObjectMeta{
+			Name:      "daemonset-1",
+			Namespace: "default",
+			UID:       types.UID("uid-daemonset-1"),
+			Labels: map[string]string{
+				constants.LabelApplicationID: "app-2",
+				constants.LabelQueueName:     "root.default",
+			},
+			OwnerReferences: []apis.OwnerReference{
+				{
+					Kind: "DaemonSet",
+				},
+			},
+		},
+		Spec: v1.PodSpec{
+			SchedulerName: constants.SchedulerName,
+			Containers:    containers,
+			Affinity: &v1.Affinity{
+				NodeAffinity: &v1.NodeAffinity{
+					RequiredDuringSchedulingIgnoredDuringExecution: &v1.NodeSelector{
+						NodeSelectorTerms: []v1.NodeSelectorTerm{
+							{
+								MatchFields: []v1.NodeSelectorRequirement{
+									{
+										Key:      "metadata.name",
+										Operator: v1.NodeSelectorOpIn, // note: remove this line to cause NodeAffinity predicate to fail (parse error) - no scheduling progress in this case
+										Values:   []string{"node-1"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: v1.PodStatus{
+			Phase: v1.PodPending,
+		},
+	}
+	// submit DaemonSet pod - requiredNode = "node-1"
+	cluster.AddPod(dsPod1)
+
+	time.Sleep(time.Second * 5)
+	cluster.DeletePod(pod2Node1) // selected by the preemption logic
+	time.Sleep(time.Hour)
 }
