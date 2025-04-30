@@ -26,6 +26,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apis "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -38,6 +39,22 @@ import (
 type SchedulerKubeClient struct {
 	clientSet *kubernetes.Clientset
 	configs   *rest.Config
+}
+
+func (nc SchedulerKubeClient) PatchPod(namespace, podName string, data []byte) (*v1.Pod, error) {
+	patchedPod, err := nc.clientSet.CoreV1().Pods(namespace).Patch(context.Background(), podName, types.StrategicMergePatchType, data, apis.PatchOptions{})
+	if err != nil {
+		log.Log(log.ShimClient).Error("Patch pod failed",
+			zap.String("namespace", namespace),
+			zap.String("podName", podName),
+			zap.Error(err))
+		return nil, err
+	}
+
+	log.Log(log.ShimClient).Info("Successfully patched pod",
+		zap.String("namespace", namespace),
+		zap.String("podName", podName))
+	return patchedPod, nil
 }
 
 func newBootstrapSchedulerKubeClient(kc string) SchedulerKubeClient {

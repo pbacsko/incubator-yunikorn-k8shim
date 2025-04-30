@@ -37,6 +37,9 @@ type KubeClient interface {
 	// Update a pod
 	UpdatePod(pod *v1.Pod, podMutator func(pod *v1.Pod)) (*v1.Pod, error)
 
+	// Patch a pod
+	PatchPod(namespace, podName string, data []byte) (*v1.Pod, error)
+
 	// Update the status of a pod
 	UpdateStatus(pod *v1.Pod) (*v1.Pod, error)
 

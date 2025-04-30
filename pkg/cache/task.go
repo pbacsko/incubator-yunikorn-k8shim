@@ -20,6 +20,7 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -185,6 +186,10 @@ func (task *Task) UpdateTaskPodStatus(pod *v1.Pod) (*v1.Pod, error) {
 
 func (task *Task) UpdateTaskPod(pod *v1.Pod, podMutator func(pod *v1.Pod)) (*v1.Pod, error) {
 	return task.context.apiProvider.GetAPIs().KubeClient.UpdatePod(pod, podMutator)
+}
+
+func (task *Task) PatchTaskPod(pod *v1.Pod, data []byte) (*v1.Pod, error) {
+	return task.context.apiProvider.GetAPIs().KubeClient.PatchPod(pod.Namespace, pod.Name, data)
 }
 
 func (task *Task) isTerminated() bool {
@@ -436,18 +441,29 @@ func (task *Task) postTaskBound() {
 		// structure for podMaxInUnschedulablePodsDuration (default 5 minutes). Here we update the pod
 		// explicitly to move it back to the active queue.
 		// See: pkg/scheduler/internal/queue/scheduling_queue.go:isPodUpdated() for what is considered updated.
-		podCopy := task.pod.DeepCopy()
-		if _, err := task.UpdateTaskPod(podCopy, func(pod *v1.Pod) {
-			// Ensure that the default scheduler detects the pod as having changed
-			if pod.Annotations == nil {
-				pod.Annotations = make(map[string]string)
-			}
-			pod.Annotations[constants.DomainYuniKorn+"scheduled-at"] = strconv.FormatInt(time.Now().UnixNano(), 10)
-		}); err != nil {
-			log.Log(log.ShimCacheTask).Warn("failed to update pod status", zap.Error(err))
+		patch := map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"annotations": map[string]interface{}{
+					constants.DomainYuniKorn + "scheduled-at": strconv.FormatInt(time.Now().UnixNano(), 10),
+				},
+			},
 		}
+		patchJSON, err := json.Marshal(patch)
+		if err != nil {
+			log.Log(log.ShimScheduler).Error("cannot generate patch json", zap.Error(err))
+			goto ph
+		}
+
+		patchedPod, err := task.PatchTaskPod(task.pod, patchJSON)
+		if err != nil {
+			log.Log(log.ShimScheduler).Error("error during patch operation", zap.Error(err))
+			goto ph
+		}
+
+		task.pod = patchedPod
 	}
 
+ph:
 	if task.placeholder {
 		log.Log(log.ShimCacheTask).Info("placeholder is bound",
 			zap.String("appID", task.applicationID),

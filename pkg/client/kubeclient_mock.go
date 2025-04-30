@@ -173,6 +173,10 @@ func (c *KubeClientMock) UpdatePod(pod *v1.Pod, podMutator func(pod *v1.Pod)) (*
 	return c.updateFn(pod, podMutator)
 }
 
+func (c *KubeClientMock) PatchPod(_, _ string, _ []byte) (*v1.Pod, error) {
+	return nil, nil
+}
+
 func (c *KubeClientMock) UpdateStatus(pod *v1.Pod) (*v1.Pod, error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
