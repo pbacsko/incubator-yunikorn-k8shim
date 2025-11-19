@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/looplab/fsm"
@@ -59,6 +60,7 @@ type Task struct {
 	schedulingState TaskSchedulingState
 	resource        *si.Resource
 	pod             *v1.Pod
+	shouldBind      atomic.Bool
 
 	lock *locking.RWMutex
 }
@@ -89,6 +91,7 @@ func NewFromTaskMeta(tid string, app *Application, ctx *Context, metadata TaskMe
 
 func createTaskInternal(tid string, app *Application, resource *si.Resource,
 	pod *v1.Pod, placeholder bool, taskGroupName string, ctx *Context, originator bool) *Task {
+
 	task := &Task{
 		taskID:          tid,
 		alias:           fmt.Sprintf("%s/%s", pod.Namespace, pod.Name),
@@ -106,6 +109,7 @@ func createTaskInternal(tid string, app *Application, resource *si.Resource,
 		schedulingState: TaskSchedPending,
 		lock:            &locking.RWMutex{},
 	}
+	task.shouldBind.Store(true)
 	if tgName := utils.GetTaskGroupFromPodSpec(pod); tgName != "" {
 		task.taskGroupName = tgName
 	}
@@ -315,6 +319,7 @@ func (task *Task) updateAllocation() {
 		AllowPreemptOther: task.isPreemptOtherAllowed(),
 	}
 
+	bound := task.sm.Is(TaskStates().Bound)
 	// submit allocation
 	rr := common.CreateAllocationForTask(
 		task.applicationID,
@@ -325,7 +330,8 @@ func (task *Task) updateAllocation() {
 		task.taskGroupName,
 		task.pod,
 		task.originator,
-		preemptionPolicy)
+		preemptionPolicy,
+		bound)
 	log.Log(log.ShimCacheTask).Debug("send update request", zap.Stringer("request", rr))
 	if err := task.context.apiProvider.GetAPIs().SchedulerAPI.UpdateAllocation(rr); err != nil {
 		log.Log(log.ShimCacheTask).Debug("failed to send allocation to scheduler", zap.Error(err))
@@ -359,8 +365,8 @@ func (task *Task) postTaskAllocated() {
 				zap.String("podUID", string(task.pod.UID)))
 
 			task.context.AddPendingPodAllocation(string(task.pod.UID), task.nodeName)
-
-			dispatcher.Dispatch(NewBindTaskEvent(task.applicationID, task.taskID))
+			task.context.ActivatePod(task.pod)
+			// dispatcher.Dispatch(NewBindTaskEvent(task.applicationID, task.taskID))
 			events.GetRecorder().Eventf(task.pod.DeepCopy(),
 				nil, v1.EventTypeNormal, "Pending", "Pending",
 				"Pod %s is ready for scheduling on node %s", task.alias, task.nodeName)
@@ -383,6 +389,14 @@ func (task *Task) postTaskAllocated() {
 			log.Log(log.ShimCacheTask).Debug("bind pod",
 				zap.String("podName", task.pod.Name),
 				zap.String("podUID", string(task.pod.UID)))
+
+			if !task.shouldBind.Load() {
+				log.Log(log.ShimCacheTask).Info("task has been cancelled",
+					zap.String("taskID", task.taskID))
+				task.shouldBind.Store(true)
+				task.releaseAllocation()
+				task.sm.SetState(TaskStates().New)
+			}
 
 			if err := task.context.apiProvider.GetAPIs().KubeClient.Bind(task.pod, task.nodeName); err != nil {
 				log.Log(log.ShimCacheTask).Error("bind pod to node failed", zap.String("taskID", task.taskID), zap.Error(err))
@@ -429,7 +443,7 @@ func (task *Task) postTaskBound() {
 		// When the pod is actively scheduled by YuniKorn, it can be  moved to the default-scheduler's
 		// UnschedulablePods structure. If the pod does not change, the pod will stay in the UnschedulablePods
 		// structure for podMaxInUnschedulablePodsDuration (default 5 minutes). Here we explicitly activate the pod.
-		task.context.ActivatePod(task.pod)
+		// task.context.ActivatePod(task.pod)
 	}
 
 	if task.placeholder {
@@ -439,6 +453,8 @@ func (task *Task) postTaskBound() {
 			zap.String("taskGroupName", task.taskGroupName))
 		dispatcher.Dispatch(NewUpdateApplicationReservationEvent(task.applicationID))
 	}
+
+	task.updateAllocation() // send "bound = true" update to the core
 }
 
 func (task *Task) postTaskRejected() {
@@ -653,4 +669,12 @@ func (task *Task) SetTaskPod(pod *v1.Pod) {
 		// update allocation in core
 		task.updateAllocation()
 	}
+}
+
+func (task *Task) TryCancelBind() {
+	task.shouldBind.Store(false)
+}
+
+func (task *Task) TriggerBind() {
+	dispatcher.Dispatch(NewBindTaskEvent(task.applicationID, task.taskID))
 }

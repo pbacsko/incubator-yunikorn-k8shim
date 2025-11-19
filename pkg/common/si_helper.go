@@ -91,7 +91,7 @@ func CreateAllocationRequestForTask(appID, taskID string, resource *si.Resource,
 	}
 }
 
-func CreateAllocationForTask(appID, taskID, nodeID string, resource *si.Resource, placeholder bool, taskGroupName string, pod *v1.Pod, originator bool, preemptionPolicy *si.PreemptionPolicy) *si.AllocationRequest {
+func CreateAllocationForTask(appID, taskID, nodeID string, resource *si.Resource, placeholder bool, taskGroupName string, pod *v1.Pod, originator bool, preemptionPolicy *si.PreemptionPolicy, bound bool) *si.AllocationRequest {
 	allocation := si.Allocation{
 		AllocationKey:    taskID,
 		AllocationTags:   CreateTagsForTask(pod),
@@ -103,6 +103,7 @@ func CreateAllocationForTask(appID, taskID, nodeID string, resource *si.Resource
 		Placeholder:      placeholder,
 		Originator:       originator,
 		PreemptionPolicy: preemptionPolicy,
+		Bound:            bound,
 	}
 
 	// add creation time for ask

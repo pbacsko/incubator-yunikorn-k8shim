@@ -340,7 +340,7 @@ func TestCreateAllocationForTask(t *testing.T) {
 		AllowPreemptOther: true,
 	}
 
-	updateRequest := CreateAllocationForTask("appId1", "taskId1", "node1", res, false, "", pod, false, preemptionPolicy)
+	updateRequest := CreateAllocationForTask("appId1", "taskId1", "node1", res, false, "", pod, false, preemptionPolicy, true)
 	allocs := updateRequest.Allocations
 	assert.Equal(t, len(allocs), 1)
 	alloc := allocs[0]
@@ -351,6 +351,7 @@ func TestCreateAllocationForTask(t *testing.T) {
 	assert.Assert(t, alloc.PreemptionPolicy != nil)
 	assert.Equal(t, alloc.PreemptionPolicy.AllowPreemptSelf, false)
 	assert.Equal(t, alloc.PreemptionPolicy.AllowPreemptOther, true)
+	assert.Assert(t, alloc.Bound)
 
 	podName1 := "pod-resource-test-00002"
 	var pri = int32(100)
@@ -376,7 +377,7 @@ func TestCreateAllocationForTask(t *testing.T) {
 		AllowPreemptOther: false,
 	}
 
-	updateRequest1 := CreateAllocationForTask("appId1", "taskId1", "node1", res, false, "", pod1, false, preemptionPolicy1)
+	updateRequest1 := CreateAllocationForTask("appId1", "taskId1", "node1", res, false, "", pod1, false, preemptionPolicy1, false)
 	allocs1 := updateRequest1.Allocations
 	assert.Equal(t, len(allocs1), 1)
 	alloc1 := allocs1[0]
@@ -389,6 +390,7 @@ func TestCreateAllocationForTask(t *testing.T) {
 	tags := alloc1.AllocationTags
 	assert.Equal(t, tags[common.DomainK8s+common.GroupMeta+"podName"], podName1)
 	assert.Equal(t, alloc1.Priority, int32(100))
+	assert.Assert(t, !alloc1.Bound)
 }
 
 // TestGetTerminationTypeFromString tests the GetTerminationTypeFromString function.

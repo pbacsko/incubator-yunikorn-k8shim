@@ -107,10 +107,27 @@ func (callback *AsyncRMCallback) UpdateAllocation(response *si.AllocationRespons
 		callback.context.ForgetPod(release.GetAllocationKey())
 
 		// TerminationType 0 mean STOPPED_BY_RM
-		if release.TerminationType != si.TerminationType_STOPPED_BY_RM {
+		if release.TerminationType != si.TerminationType_STOPPED_BY_RM && release.TerminationType != si.TerminationType_ALLOCATION_CANCEL {
 			// send release app allocation to application states machine
 			ev := NewReleaseAppAllocationEvent(release.ApplicationID, release.TerminationType, release.AllocationKey)
 			dispatcher.Dispatch(ev)
+		}
+
+		if release.TerminationType == si.TerminationType_ALLOCATION_CANCEL {
+			appID := release.GetApplicationID()
+			app := callback.context.getApplication(appID)
+			if app == nil {
+				log.Log(log.ShimRMCallback).Warn("callback: application not found to cancel task", zap.String("appID", appID),
+					zap.String("taskID", release.AllocationKey))
+				return nil
+			}
+			task := app.GetTask(release.GetAllocationKey())
+			if task == nil {
+				log.Log(log.ShimRMCallback).Warn("callback: unable to get task", zap.String("appID", appID),
+					zap.String("taskID", release.AllocationKey))
+				return nil
+			}
+			task.TryCancelBind()
 		}
 	}
 

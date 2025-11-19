@@ -162,7 +162,7 @@ func (sp *YuniKornSchedulerPlugin) PreFilter(_ context.Context, _ *framework.Cyc
 		}
 
 		nodeID, ok := sp.context.GetPendingPodAllocation(taskID)
-		if task.GetTaskState() == cache.TaskStates().Bound && ok {
+		if task.GetTaskState() == cache.TaskStates().Allocated && ok {
 			log.Log(log.ShimSchedulerPlugin).Info("Releasing pod for scheduling (PreFilter phase)",
 				zap.String("namespace", pod.Namespace),
 				zap.String("pod", pod.Name),
@@ -198,7 +198,7 @@ func (sp *YuniKornSchedulerPlugin) Filter(_ context.Context, _ *framework.CycleS
 
 	taskID := string(pod.UID)
 	if _, task, ok := sp.getTask(appID, taskID); ok {
-		if task.GetTaskState() == cache.TaskStates().Bound {
+		if task.GetTaskState() == cache.TaskStates().Allocated {
 			// attempt to start a pod allocation. Filter() gets called once per {Pod,Node} candidate; we only want
 			// to proceed in the case where the Node we are asked about matches the one YuniKorn has selected.
 			// this check is fairly cheap (one map lookup); if we fail the check here the scheduling framework will
@@ -256,13 +256,14 @@ func (sp *YuniKornSchedulerPlugin) PostBind(_ context.Context, _ *framework.Cycl
 	}
 
 	taskID := string(pod.UID)
-	if _, _, ok := sp.getTask(appID, taskID); ok {
+	if _, task, ok := sp.getTask(appID, taskID); ok {
 		log.Log(log.ShimSchedulerPlugin).Info("Managed Pod bound successfully",
 			zap.String("namespace", pod.Namespace),
 			zap.String("pod", pod.Name),
 			zap.String("taskID", taskID),
 			zap.String("assignedNode", nodeName))
 		sp.context.RemovePodAllocation(taskID)
+		task.TriggerBind()
 	}
 }
 
