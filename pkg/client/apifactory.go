@@ -36,12 +36,13 @@ import (
 
 type Type int
 
-var informerTypes = [...]string{"Pod", "Node", "ConfigMap", "PV", "PVC", "Storage", "CSINode", "CSIDriver", "CSIStorageCapacity", "Namespace", "PriorityClass", "Service", "ReplicationController", "ReplicaSet", "StatefulSet", "VolumeAttachment"}
+var informerTypes = [...]string{"Pod", "Node", "ConfigMap", "Secret", "PV", "PVC", "Storage", "CSINode", "CSIDriver", "CSIStorageCapacity", "Namespace", "PriorityClass", "Service", "ReplicationController", "ReplicaSet", "StatefulSet", "VolumeAttachment"}
 
 const (
 	PodInformerHandlers Type = iota
 	NodeInformerHandlers
 	ConfigMapInformerHandlers
+	SecretInformerHandlers
 	PVInformerHandlers
 	PVCInformerHandlers
 	StorageInformerHandlers
@@ -97,6 +98,7 @@ func NewAPIFactory(scheduler api.SchedulerAPI, informerFactory informers.SharedI
 	podInformer := informerFactory.Core().V1().Pods()
 	nodeInformer := informerFactory.Core().V1().Nodes()
 	configMapInformer := namespaceInformerFactory.Core().V1().ConfigMaps()
+	secretInformer := namespaceInformerFactory.Core().V1().Secrets()
 	pvInformer := informerFactory.Core().V1().PersistentVolumes()
 	pvcInformer := informerFactory.Core().V1().PersistentVolumeClaims()
 	storageInformer := informerFactory.Storage().V1().StorageClasses()
@@ -142,6 +144,7 @@ func NewAPIFactory(scheduler api.SchedulerAPI, informerFactory informers.SharedI
 			PodInformer:                   podInformer,
 			NodeInformer:                  nodeInformer,
 			ConfigMapInformer:             configMapInformer,
+			SecretInformer:                secretInformer,
 			PVInformer:                    pvInformer,
 			PVCInformer:                   pvcInformer,
 			StorageClassInformer:          storageInformer,
@@ -210,6 +213,8 @@ func (s *APIFactory) addEventHandlers(
 		_, err = s.GetAPIs().NodeInformer.Informer().AddEventHandler(handler)
 	case ConfigMapInformerHandlers:
 		_, err = s.GetAPIs().ConfigMapInformer.Informer().AddEventHandler(handler)
+	case SecretInformerHandlers:
+		_, err = s.GetAPIs().SecretInformer.Informer().AddEventHandler(handler)
 	case StorageInformerHandlers:
 		_, err = s.GetAPIs().StorageClassInformer.Informer().AddEventHandler(handler)
 	case PVInformerHandlers:

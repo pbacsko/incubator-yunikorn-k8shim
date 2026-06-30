@@ -147,7 +147,8 @@ func (ss *KubernetesShim) registerShimLayer() error {
 
 	confMap := conf.FlattenConfigMaps(configMaps)
 	config := utils.GetCoreSchedulerConfigFromConfigMap(confMap)
-	extraConfig := utils.GetExtraConfigFromConfigMap(confMap)
+	ss.context.LoadLdapSecret()
+	extraConfig := ss.context.BuildExtraConfig(confMap)
 
 	registerMessage := si.RegisterResourceManagerRequest{
 		RmID:        configuration.ClusterID,

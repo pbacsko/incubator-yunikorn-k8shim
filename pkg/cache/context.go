@@ -33,6 +33,7 @@ import (
 	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apiserver/pkg/util/feature"
@@ -76,6 +77,7 @@ type Context struct {
 	predManager    predicates.PredicateManager    // K8s predicates
 	namespace      string                         // yunikorn namespace
 	configMaps     []*v1.ConfigMap                // cached yunikorn configmaps
+	ldapSecret     *v1.Secret                     // cached yunikorn ldap secret
 	lock           *locking.RWMutex               // lock - used not only for context data but also to ensure that multiple event types are not executed concurrently
 	txnID          atomic.Uint64                  // transaction ID counter
 	klogger        klog.Logger
@@ -138,6 +140,17 @@ func (ctx *Context) AddSchedulingEventHandlers() error {
 		AddFn:    ctx.addConfigMaps,
 		UpdateFn: ctx.updateConfigMaps,
 		DeleteFn: ctx.deleteConfigMaps,
+	})
+	if err != nil {
+		return err
+	}
+
+	err = ctx.apiProvider.AddEventHandler(&client.ResourceEventHandlers{
+		Type:     client.SecretInformerHandlers,
+		FilterFn: ctx.filterSecrets,
+		AddFn:    ctx.onSecretAdd,
+		UpdateFn: ctx.onSecretUpdate,
+		DeleteFn: ctx.onSecretDelete,
 	})
 	if err != nil {
 		return err
@@ -589,6 +602,56 @@ func (ctx *Context) deleteConfigMaps(obj interface{}) {
 	}
 }
 
+func (ctx *Context) filterSecrets(obj interface{}) bool {
+	switch obj := obj.(type) {
+	case *v1.Secret:
+		return obj.Name == utils.YunikornSecretName && obj.Namespace == ctx.namespace
+	case cache.DeletedFinalStateUnknown:
+		return ctx.filterSecrets(obj.Obj)
+	default:
+		return false
+	}
+}
+
+func (ctx *Context) onSecretAdd(obj interface{}) {
+	log.Log(log.ShimContext).Debug("secret added")
+	secret := utils.Convert2Secret(obj)
+	if secret == nil {
+		return
+	}
+	ctx.setLdapSecret(secret)
+	ctx.triggerLdapSecretReload()
+}
+
+func (ctx *Context) onSecretUpdate(_, newObj interface{}) {
+	log.Log(log.ShimContext).Debug("secret updated")
+	secret := utils.Convert2Secret(newObj)
+	if secret == nil {
+		return
+	}
+	ctx.setLdapSecret(secret)
+	ctx.triggerLdapSecretReload()
+}
+
+func (ctx *Context) onSecretDelete(obj interface{}) {
+	log.Log(log.ShimContext).Debug("secret deleted")
+	var secret *v1.Secret
+	switch t := obj.(type) {
+	case *v1.Secret:
+		secret = t
+	case cache.DeletedFinalStateUnknown:
+		secret = utils.Convert2Secret(obj)
+	default:
+		log.Log(log.ShimContext).Warn("unable to convert to secret")
+		return
+	}
+	if secret == nil {
+		return
+	}
+	ctx.setLdapSecret(nil)
+	ctx.triggerLdapSecretReload()
+}
+
 func (ctx *Context) filterPriorityClasses(obj interface{}) bool {
 	switch obj := obj.(type) {
 	case *schedulingv1.PriorityClass:
@@ -647,9 +710,65 @@ func (ctx *Context) triggerReloadConfig(index int, configMap *v1.ConfigMap) {
 	if confMap == nil {
 		return
 	}
+	ctx.pushConfigurationToCore(confMap)
+}
+
+func (ctx *Context) triggerLdapSecretReload() {
+	ctx.lock.RLock()
+	confMap := schedulerconf.FlattenConfigMaps(ctx.configMaps)
+	ctx.lock.RUnlock()
+
+	log.Log(log.ShimContext).Info("reloading LDAP configuration after secret update")
+	ctx.pushConfigurationToCore(confMap)
+}
+
+func (ctx *Context) setLdapSecret(secret *v1.Secret) {
+	ctx.lock.Lock()
+	defer ctx.lock.Unlock()
+	ctx.ldapSecret = secret
+}
+
+func (ctx *Context) LoadLdapSecret() {
+	lister := ctx.apiProvider.GetAPIs().SecretInformer.Lister()
+	if lister == nil {
+		ctx.setLdapSecret(nil)
+		return
+	}
+	secret, err := lister.Secrets(ctx.namespace).Get(utils.YunikornSecretName)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Log(log.ShimContext).Info("LDAP secret not found, continuing without bind credentials",
+				zap.String("namespace", ctx.namespace),
+				zap.String("secret", utils.YunikornSecretName))
+		} else {
+			log.Log(log.ShimContext).Warn("unable to read LDAP secret from cache, continuing without bind credentials",
+				zap.String("namespace", ctx.namespace),
+				zap.String("secret", utils.YunikornSecretName),
+				zap.Error(err))
+		}
+		ctx.setLdapSecret(nil)
+		return
+	}
+	ctx.setLdapSecret(secret)
+}
+
+func (ctx *Context) buildExtraConfig(confMap map[string]string) map[string]string {
+	extraConfig := utils.GetExtraConfigFromConfigMap(confMap)
+	ctx.lock.RLock()
+	secret := ctx.ldapSecret
+	ctx.lock.RUnlock()
+	return utils.MergeLdapExtraConfig(extraConfig, confMap, secret)
+}
+
+// BuildExtraConfig assembles the ExtraConfig map sent to the scheduler core.
+func (ctx *Context) BuildExtraConfig(confMap map[string]string) map[string]string {
+	return ctx.buildExtraConfig(confMap)
+}
+
+func (ctx *Context) pushConfigurationToCore(confMap map[string]string) {
 	log.Log(log.ShimContext).Info("reloading scheduler configuration")
 	config := utils.GetCoreSchedulerConfigFromConfigMap(confMap)
-	extraConfig := utils.GetExtraConfigFromConfigMap(confMap)
+	extraConfig := ctx.buildExtraConfig(confMap)
 
 	request := &si.UpdateConfigurationRequest{
 		RmID:        schedulerconf.GetSchedulerConf().ClusterID,
@@ -657,7 +776,6 @@ func (ctx *Context) triggerReloadConfig(index int, configMap *v1.ConfigMap) {
 		Config:      config,
 		ExtraConfig: extraConfig,
 	}
-	// tell the core to update: sync call that is serialised on the core side
 	if err := ctx.apiProvider.GetAPIs().SchedulerAPI.UpdateConfiguration(request); err != nil {
 		log.Log(log.ShimContext).Error("reload configuration failed", zap.Error(err))
 	}

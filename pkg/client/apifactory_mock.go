@@ -72,6 +72,7 @@ func NewMockedAPIProvider(showError bool) *MockedAPIProvider {
 			PodInformer:           test.NewMockedPodInformer(),
 			NodeInformer:          test.NewMockedNodeInformer(),
 			ConfigMapInformer:     test.NewMockedConfigMapInformer(),
+			SecretInformer:        test.NewMockedSecretInformer(),
 			PVInformer:            NewMockedPersistentVolumeInformer(),
 			PVCInformer:           NewMockedPersistentVolumeClaimInformer(),
 			StorageClassInformer:  NewMockedStorageClassInformer(),

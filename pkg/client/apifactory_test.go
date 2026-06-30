@@ -25,11 +25,12 @@ import (
 )
 
 func TestInformerTypes(t *testing.T) {
-	assert.Equal(t, 16, len(informerTypes), "wrong informerTypes length")
+	assert.Equal(t, 17, len(informerTypes), "wrong informerTypes length")
 
 	assert.Equal(t, "Pod", PodInformerHandlers.String())
 	assert.Equal(t, "Node", NodeInformerHandlers.String())
 	assert.Equal(t, "ConfigMap", ConfigMapInformerHandlers.String())
+	assert.Equal(t, "Secret", SecretInformerHandlers.String())
 	assert.Equal(t, "PV", PVInformerHandlers.String())
 	assert.Equal(t, "PVC", PVCInformerHandlers.String())
 	assert.Equal(t, "Storage", StorageInformerHandlers.String())

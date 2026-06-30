@@ -65,6 +65,21 @@ func TestConvert2ConfigMap(t *testing.T) {
 	assert.Equal(t, result == nil, true)
 }
 
+func TestConvert2Secret(t *testing.T) {
+	secret := &v1.Secret{}
+	result := Convert2Secret(secret)
+	assert.Equal(t, result != nil, true)
+	assert.Equal(t, reflect.DeepEqual(result, secret), true)
+
+	obj := struct{}{}
+	result = Convert2Secret(obj)
+	assert.Equal(t, result == nil, true)
+
+	pod := &v1.Pod{}
+	result = Convert2Secret(pod)
+	assert.Equal(t, result == nil, true)
+}
+
 func TestIsAssignedPod(t *testing.T) {
 	assigned := IsAssignedPod(&v1.Pod{
 		Spec: v1.PodSpec{

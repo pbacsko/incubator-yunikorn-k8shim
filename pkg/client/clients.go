@@ -47,6 +47,7 @@ type Clients struct {
 
 	// resource informers
 	ConfigMapInformer             coreInformerV1.ConfigMapInformer
+	SecretInformer                coreInformerV1.SecretInformer
 	CSIDriverInformer             storageInformerV1.CSIDriverInformer
 	CSINodeInformer               storageInformerV1.CSINodeInformer
 	CSIStorageCapacityInformer    storageInformerV1.CSIStorageCapacityInformer
@@ -72,6 +73,7 @@ func (c *Clients) WaitForSync() {
 	counter := 0
 	for {
 		if c.ConfigMapInformer.Informer().HasSynced() &&
+			c.SecretInformer.Informer().HasSynced() &&
 			c.CSIDriverInformer.Informer().HasSynced() &&
 			c.CSINodeInformer.Informer().HasSynced() &&
 			c.CSIStorageCapacityInformer.Informer().HasSynced() &&
@@ -100,6 +102,7 @@ func (c *Clients) WaitForSync() {
 
 func (c *Clients) Run(stopCh <-chan struct{}) {
 	go c.ConfigMapInformer.Informer().Run(stopCh)
+	go c.SecretInformer.Informer().Run(stopCh)
 	go c.CSIDriverInformer.Informer().Run(stopCh)
 	go c.CSINodeInformer.Informer().Run(stopCh)
 	go c.CSIStorageCapacityInformer.Informer().Run(stopCh)

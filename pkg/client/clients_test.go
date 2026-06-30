@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	noOfInformers = 16 // total number of active informers
+	noOfInformers = 17 // total number of active informers
 )
 
 func TestWaitForSync(t *testing.T) {
@@ -74,6 +74,7 @@ func TestRun(t *testing.T) {
 func getClients() *Clients {
 	return &Clients{
 		ConfigMapInformer:             test.NewMockedConfigMapInformer(),
+		SecretInformer:                test.NewMockedSecretInformer(),
 		CSIDriverInformer:             NewMockedCSIDriverInformer(),
 		CSINodeInformer:               NewMockedCSINodeInformer(),
 		CSIStorageCapacityInformer:    NewMockedCSIStorageCapacityInformer(),

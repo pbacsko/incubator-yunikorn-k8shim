@@ -65,6 +65,14 @@ func Convert2ConfigMap(obj interface{}) *v1.ConfigMap {
 	return nil
 }
 
+func Convert2Secret(obj interface{}) *v1.Secret {
+	if secret, ok := obj.(*v1.Secret); ok {
+		return secret
+	}
+	log.Log(log.ShimUtils).Warn("cannot convert to *v1.Secret", zap.Stringer("type", reflect.TypeOf(obj)))
+	return nil
+}
+
 func Convert2PriorityClass(obj interface{}) *schedulingv1.PriorityClass {
 	if priorityClass, ok := obj.(*schedulingv1.PriorityClass); ok {
 		return priorityClass
